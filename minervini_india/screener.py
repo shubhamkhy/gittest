@@ -23,7 +23,6 @@ REQUIRED_FILTER_RULES = frozenset(
         "liquid_volume",
         "price_above_minimum",
         "within_10pct_of_nearest_high",
-        "non_negative_daily_change",
         "bullish_daily_candle",
     }
 )
@@ -351,10 +350,6 @@ def _score_trend_template(
     )
     open_price = opens[-1]
     close = closes[-1]
-    previous_close = closes[-2]
-    daily_change_pct = (
-        (close - previous_close) / previous_close if previous_close > 0 else -math.inf
-    )
     high_52w = max(highs[-config.high_low_window :])
     low_52w = min(lows[-config.high_low_window :])
     avg_volume_50 = _mean(volumes[-50:])
@@ -371,14 +366,6 @@ def _score_trend_template(
             "price_above_minimum",
             close > config.min_price,
             f"close {close:.2f} vs required > {config.min_price:.2f}",
-        ),
-        RuleEvaluation(
-            "non_negative_daily_change",
-            close >= previous_close,
-            (
-                f"close {close:.2f} vs previous close {previous_close:.2f}, "
-                f"change {daily_change_pct:.2%}"
-            ),
         ),
         RuleEvaluation(
             "bullish_daily_candle",

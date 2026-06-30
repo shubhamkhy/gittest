@@ -40,7 +40,6 @@ class ScreenerTests(unittest.TestCase):
         self.assertIn("at_least_40pct_return_3mo", passed_rules)
         self.assertIn("liquid_volume", passed_rules)
         self.assertIn("within_10pct_of_nearest_high", passed_rules)
-        self.assertIn("non_negative_daily_change", passed_rules)
         self.assertIn("bullish_daily_candle", passed_rules)
         self.assertIn("breakout_volume", passed_rules)
 
@@ -111,19 +110,6 @@ class ScreenerTests(unittest.TestCase):
             rule.name for rule in far_from_high_result.rules if not rule.passed
         }
         self.assertIn("within_10pct_of_nearest_high", failed_high_rules)
-
-        negative_day_result = score_stock(
-            "NEGATIVE.NS",
-            _make_negative_day_history(),
-            benchmark=_make_benchmark_history(),
-        )
-
-        self.assertFalse(negative_day_result.required_filters_passed)
-        self.assertEqual(negative_day_result.score, 0.0)
-        failed_daily_rules = {
-            rule.name for rule in negative_day_result.rules if not rule.passed
-        }
-        self.assertIn("non_negative_daily_change", failed_daily_rules)
 
         red_candle_result = score_stock(
             "REDCANDLE.NS",
@@ -298,24 +284,6 @@ def _make_far_from_nearest_high_history() -> list[DailyBar]:
             volume=previous.volume,
         ),
         latest,
-    ]
-
-
-def _make_negative_day_history() -> list[DailyBar]:
-    bars = _make_stock_history()
-    previous = bars[-2]
-    latest = bars[-1]
-    negative_close = previous.close * 0.99
-    return [
-        *bars[:-1],
-        DailyBar(
-            date=latest.date,
-            open=previous.close,
-            high=previous.close * 1.01,
-            low=negative_close * 0.99,
-            close=negative_close,
-            volume=latest.volume,
-        ),
     ]
 
 
