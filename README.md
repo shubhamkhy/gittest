@@ -6,6 +6,7 @@ using Mark Minervini-inspired concepts:
 - trend-template checks using 50/150/200-day moving averages
 - required price confirmation above the 50-day and 200-day EMAs
 - required 40% or better return over roughly the last three months
+- required current price within 10% of the nearest recent high
 - price location versus 52-week high and low
 - liquidity filter using 50-day average volume
 - volatility contraction pattern (VCP) style setup checks
@@ -91,6 +92,7 @@ By default, CLI results only include stocks that pass the mandatory filters:
 - at least 40% return over the last 63 trading days, roughly three months
 - 50-day average daily volume above 100,000 shares
 - latest close above 60
+- latest close within 10% of the highest high from the prior 20 trading days
 
 ## How the score works
 
@@ -100,6 +102,7 @@ The normalized score is built from three components:
    - close above 50/150/200-day moving averages
    - close above the 50-day and 200-day EMAs
    - close above 60
+   - close within 10% of the highest high from the prior 20 trading days
    - 50SMA > 150SMA > 200SMA
    - 200SMA rising versus 20 trading days ago
    - close within 25% of 52-week high
@@ -126,9 +129,10 @@ If no benchmark is supplied, relative strength is not scored and the remaining
 - `avoid_for_now`: does not currently meet enough rules
 - `insufficient_data`: fewer than 260 daily bars
 
-The `inside_candle` table column is `yes` when the latest candle is inside the
-previous day's range: latest high is at or below the previous high, and latest
-low is at or above the previous low.
+The table output prefixes the symbol with `*` when the latest completed candle
+is a strict inside candle: latest high is below the previous high, latest low is
+above the previous low, and both candles have valid high/low ranges. CSV and JSON
+outputs expose the same signal as `inside_candle_formed`.
 
 The `suggested_stop` value is a simple 8% risk reference from the latest close.
 It is not a promise of execution or loss control; gap risk and liquidity still

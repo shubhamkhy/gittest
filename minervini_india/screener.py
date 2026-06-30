@@ -22,6 +22,7 @@ REQUIRED_FILTER_RULES = frozenset(
         "at_least_40pct_return_3mo",
         "liquid_volume",
         "price_above_minimum",
+        "within_10pct_of_nearest_high",
     }
 )
 
@@ -63,6 +64,8 @@ class ScreenConfig:
     rs_lookback_days: int = 126
     min_avg_volume_50d: float = 100_000
     min_price: float = 60.0
+    nearest_high_lookback_days: int = 20
+    max_nearest_high_distance_pct: float = 0.10
     max_stop_loss_pct: float = 0.08
 
 
@@ -345,6 +348,13 @@ def _score_trend_template(
     high_52w = max(highs[-config.high_low_window :])
     low_52w = min(lows[-config.high_low_window :])
     avg_volume_50 = _mean(volumes[-50:])
+    nearest_high = _nearest_prior_high(
+        highs,
+        lookback_days=config.nearest_high_lookback_days,
+    )
+    nearest_high_distance_pct = (
+        (nearest_high - close) / nearest_high if nearest_high > 0 else math.inf
+    )
 
     rules = [
         RuleEvaluation(
@@ -391,6 +401,14 @@ def _score_trend_template(
             "within_25pct_of_52w_high",
             close >= high_52w * (1.0 - config.max_below_52w_high_pct),
             f"close {close:.2f}, 52w high {high_52w:.2f}",
+        ),
+        RuleEvaluation(
+            "within_10pct_of_nearest_high",
+            abs(nearest_high_distance_pct) <= config.max_nearest_high_distance_pct,
+            (
+                f"close {close:.2f}, nearest {config.nearest_high_lookback_days}d "
+                f"prior high {nearest_high:.2f}, distance {nearest_high_distance_pct:.2%}"
+            ),
         ),
         RuleEvaluation(
             "at_least_30pct_above_52w_low",
@@ -582,7 +600,31 @@ def _inside_candle_formed(bars: Sequence[DailyBar]) -> bool:
 
     previous = bars[-2]
     latest = bars[-1]
-    return latest.high <= previous.high and latest.low >= previous.low
+    if not (_has_valid_range(previous) and _has_valid_range(latest)):
+        return False
+
+    return latest.high < previous.high and latest.low > previous.low
+
+
+def _has_valid_range(bar: DailyBar) -> bool:
+    return (
+        math.isfinite(bar.high)
+        and math.isfinite(bar.low)
+        and math.isfinite(bar.close)
+        and bar.high > bar.low
+        and bar.low <= bar.close <= bar.high
+    )
+
+
+def _nearest_prior_high(values: Sequence[float], lookback_days: int) -> float:
+    if len(values) < 2:
+        raise ValueError("need at least two values to find a prior high")
+
+    window_start = max(0, len(values) - lookback_days - 1)
+    candidates = values[window_start:-1]
+    if not candidates:
+        raise ValueError("need at least one prior value to find a prior high")
+    return max(candidates)
 
 
 def _points_from_rules(rules: Iterable[RuleEvaluation], maximum: float) -> float:

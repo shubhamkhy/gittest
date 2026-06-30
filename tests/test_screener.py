@@ -39,6 +39,7 @@ class ScreenerTests(unittest.TestCase):
         self.assertIn("price_above_200sma", passed_rules)
         self.assertIn("at_least_40pct_return_3mo", passed_rules)
         self.assertIn("liquid_volume", passed_rules)
+        self.assertIn("within_10pct_of_nearest_high", passed_rules)
         self.assertIn("breakout_volume", passed_rules)
 
     def test_requires_ema_position_return_and_average_volume(self) -> None:
@@ -96,6 +97,19 @@ class ScreenerTests(unittest.TestCase):
         }
         self.assertIn("price_above_minimum", failed_price_rules)
 
+        far_from_high_result = score_stock(
+            "FARHIGH.NS",
+            _make_far_from_nearest_high_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(far_from_high_result.required_filters_passed)
+        self.assertEqual(far_from_high_result.score, 0.0)
+        failed_high_rules = {
+            rule.name for rule in far_from_high_result.rules if not rule.passed
+        }
+        self.assertIn("within_10pct_of_nearest_high", failed_high_rules)
+
     def test_marks_inside_candle_when_latest_range_is_inside_previous_day(self) -> None:
         result = score_stock(
             "INSIDE.NS",
@@ -105,6 +119,14 @@ class ScreenerTests(unittest.TestCase):
 
         self.assertTrue(result.inside_candle_formed)
         self.assertTrue(result.to_dict()["inside_candle_formed"])
+
+        equal_boundary_result = score_stock(
+            "EQUAL.NS",
+            _make_equal_boundary_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(equal_boundary_result.inside_candle_formed)
 
     def test_csv_loader_accepts_common_ohlcv_header_variants(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -212,6 +234,42 @@ def _make_inside_candle_history() -> list[DailyBar]:
             close=inside_close,
             volume=latest.volume,
         ),
+    ]
+
+
+def _make_equal_boundary_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    previous = bars[-2]
+    latest = bars[-1]
+    equal_close = (previous.high + previous.low) / 2
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=equal_close,
+            high=previous.high,
+            low=previous.low,
+            close=equal_close,
+            volume=latest.volume,
+        ),
+    ]
+
+
+def _make_far_from_nearest_high_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    previous = bars[-2]
+    latest = bars[-1]
+    return [
+        *bars[:-2],
+        DailyBar(
+            date=previous.date,
+            open=previous.open,
+            high=latest.close * 1.25,
+            low=previous.low,
+            close=previous.close,
+            volume=previous.volume,
+        ),
+        latest,
     ]
 
 

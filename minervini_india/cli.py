@@ -191,12 +191,11 @@ def _write_table(results: Sequence[ScreenResult]) -> None:
 
     rows = [
         [
-            result.symbol,
+            _display_symbol(result),
             result.as_of.isoformat() if result.as_of else "-",
             f"{result.close:.2f}" if result.close is not None else "-",
             f"{result.score:.1f}",
             result.label,
-            "yes" if result.inside_candle_formed else "no",
             f"{result.pivot:.2f}" if result.pivot is not None else "-",
             f"{result.suggested_stop:.2f}" if result.suggested_stop is not None else "-",
         ]
@@ -208,7 +207,6 @@ def _write_table(results: Sequence[ScreenResult]) -> None:
         "close",
         "score",
         "label",
-        "inside_candle",
         "pivot",
         "stop",
     ]
@@ -220,6 +218,12 @@ def _write_table(results: Sequence[ScreenResult]) -> None:
     print("  ".join("-" * width for width in widths))
     for row in rows:
         print("  ".join(str(value).ljust(widths[index]) for index, value in enumerate(row)))
+
+
+def _display_symbol(result: ScreenResult) -> str:
+    if result.inside_candle_formed:
+        return f"* {result.symbol}"
+    return result.symbol
 
 
 if __name__ == "__main__":
