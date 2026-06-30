@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import csv
-from datetime import date, timedelta
+import sys
+import types
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from minervini_india import DailyBar, load_csv_history, screen_universe, score_stock
+from minervini_india import (
+    DailyBar,
+    load_csv_history,
+    load_yahoo_history,
+    screen_universe,
+    score_stock,
+)
 
 
 class ScreenerTests(unittest.TestCase):
@@ -108,6 +116,24 @@ class ScreenerTests(unittest.TestCase):
                 )
             ],
         )
+
+    def test_yahoo_loader_skips_incomplete_live_rows(self) -> None:
+        sentinel = object()
+        previous_yfinance = sys.modules.get("yfinance", sentinel)
+        sys.modules["yfinance"] = types.SimpleNamespace(Ticker=_FakeTicker)
+        try:
+            bars = load_yahoo_history("TEST.NS")
+        finally:
+            if previous_yfinance is sentinel:
+                sys.modules.pop("yfinance", None)
+            else:
+                sys.modules["yfinance"] = previous_yfinance
+
+        self.assertEqual(
+            [bar.date for bar in bars],
+            [date(2026, 1, 1), date(2026, 1, 3)],
+        )
+        self.assertEqual([bar.close for bar in bars], [104.0, 108.0])
 
     def test_screen_universe_ranks_highest_score_first(self) -> None:
         strong = _make_stock_history()
@@ -222,6 +248,56 @@ def _spread_for_index(index: int) -> float:
     if index < 280:
         return 0.05
     return 0.025
+
+
+class _FakeTicker:
+    def __init__(self, symbol: str) -> None:
+        self.symbol = symbol
+
+    def history(self, period: str, auto_adjust: bool) -> "_FakeYahooFrame":
+        return _FakeYahooFrame(
+            [
+                (
+                    datetime(2026, 1, 1),
+                    {
+                        "Open": 100,
+                        "High": 105,
+                        "Low": 99,
+                        "Close": 104,
+                        "Volume": 600_000,
+                    },
+                ),
+                (
+                    datetime(2026, 1, 2),
+                    {
+                        "Open": 104,
+                        "High": 106,
+                        "Low": 103,
+                        "Close": float("nan"),
+                        "Volume": 650_000,
+                    },
+                ),
+                (
+                    datetime(2026, 1, 3),
+                    {
+                        "Open": 105,
+                        "High": 109,
+                        "Low": 104,
+                        "Close": 108,
+                        "Volume": 700_000,
+                    },
+                ),
+            ]
+        )
+
+
+class _FakeYahooFrame:
+    def __init__(self, rows: list[tuple[datetime, dict[str, float]]]) -> None:
+        self._rows = rows
+        self.empty = not rows
+
+    def iterrows(self):
+        return iter(self._rows)
 
 
 if __name__ == "__main__":

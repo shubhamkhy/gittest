@@ -8,6 +8,7 @@ considered.
 from __future__ import annotations
 
 import csv
+import math
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -181,14 +182,22 @@ def load_yahoo_history(symbol: str, period: str = "18mo") -> list[DailyBar]:
 
     bars: list[DailyBar] = []
     for index, row in frame.iterrows():
+        open_price = float(row["Open"])
+        high = float(row["High"])
+        low = float(row["Low"])
+        close = float(row["Close"])
+        volume = float(row["Volume"])
+        if not all(math.isfinite(value) for value in (open_price, high, low, close, volume)):
+            continue
+
         bars.append(
             DailyBar(
                 date=index.date(),
-                open=float(row["Open"]),
-                high=float(row["High"]),
-                low=float(row["Low"]),
-                close=float(row["Close"]),
-                volume=float(row["Volume"]),
+                open=open_price,
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
             )
         )
     return bars
