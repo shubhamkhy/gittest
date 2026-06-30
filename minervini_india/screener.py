@@ -19,6 +19,7 @@ REQUIRED_FILTER_RULES = frozenset(
         "price_above_50ema",
         "price_above_200ema",
         "at_least_40pct_return_3mo",
+        "liquid_volume",
     }
 )
 
@@ -58,7 +59,7 @@ class ScreenConfig:
     near_pivot_pct: float = 0.05
     breakout_volume_multiplier: float = 1.40
     rs_lookback_days: int = 126
-    min_avg_volume_50d: float = 100_000
+    min_avg_volume_50d: float = 500_000
     max_stop_loss_pct: float = 0.08
 
 
@@ -384,8 +385,11 @@ def _score_trend_template(
         ),
         RuleEvaluation(
             "liquid_volume",
-            avg_volume_50 >= config.min_avg_volume_50d,
-            f"50d avg volume {avg_volume_50:.0f}",
+            avg_volume_50 > config.min_avg_volume_50d,
+            (
+                f"50d avg volume {avg_volume_50:.0f} "
+                f"vs required > {config.min_avg_volume_50d:.0f}"
+            ),
         ),
     ]
     return _points_from_rules(rules, maximum=50.0), rules

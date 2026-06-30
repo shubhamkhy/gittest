@@ -28,9 +28,10 @@ class ScreenerTests(unittest.TestCase):
         self.assertIn("price_above_200ema", passed_rules)
         self.assertIn("price_above_200sma", passed_rules)
         self.assertIn("at_least_40pct_return_3mo", passed_rules)
+        self.assertIn("liquid_volume", passed_rules)
         self.assertIn("breakout_volume", passed_rules)
 
-    def test_requires_ema_position_and_40pct_three_month_return(self) -> None:
+    def test_requires_ema_position_return_and_average_volume(self) -> None:
         low_return_result = score_stock(
             "LOWRETURN.NS",
             _make_low_return_history(),
@@ -58,6 +59,19 @@ class ScreenerTests(unittest.TestCase):
         }
         self.assertIn("price_above_50ema", failed_ema_rules)
         self.assertIn("price_above_200ema", failed_ema_rules)
+
+        low_volume_result = score_stock(
+            "LOWVOLUME.NS",
+            _make_low_volume_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(low_volume_result.required_filters_passed)
+        self.assertEqual(low_volume_result.score, 0.0)
+        failed_volume_rules = {
+            rule.name for rule in low_volume_result.rules if not rule.passed
+        }
+        self.assertIn("liquid_volume", failed_volume_rules)
 
     def test_csv_loader_accepts_common_ohlcv_header_variants(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -118,6 +132,14 @@ def _make_low_return_history() -> list[DailyBar]:
     return _make_history(pre_breakout_step=0.45, post_breakout_step=0.45)
 
 
+def _make_low_volume_history() -> list[DailyBar]:
+    return _make_history(
+        pre_breakout_step=0.20,
+        post_breakout_step=1.00,
+        liquid=False,
+    )
+
+
 def _make_below_ema_history() -> list[DailyBar]:
     bars = _make_stock_history()
     latest = bars[-1]
@@ -134,7 +156,11 @@ def _make_below_ema_history() -> list[DailyBar]:
     ]
 
 
-def _make_history(pre_breakout_step: float, post_breakout_step: float) -> list[DailyBar]:
+def _make_history(
+    pre_breakout_step: float,
+    post_breakout_step: float,
+    liquid: bool = True,
+) -> list[DailyBar]:
     bars: list[DailyBar] = []
     start = date(2025, 1, 1)
     close = 100.0
@@ -143,14 +169,14 @@ def _make_history(pre_breakout_step: float, post_breakout_step: float) -> list[D
         spread_pct = _spread_for_index(index)
         high = close * (1 + spread_pct / 2)
         low = close * (1 - spread_pct / 2)
-        volume = 450_000
+        volume = 700_000 if liquid else 450_000
         if index >= 270:
-            volume = 220_000
+            volume = 550_000 if liquid else 220_000
         if index == 299:
             high = close * 1.015
             close = max(high, max(bar.high for bar in bars[-20:]) + 1.0)
             low = close * 0.995
-            volume = 850_000
+            volume = 1_200_000 if liquid else 850_000
         bars.append(
             DailyBar(
                 date=start + timedelta(days=index),

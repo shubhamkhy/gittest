@@ -88,6 +88,7 @@ By default, CLI results only include stocks that pass the mandatory filters:
 - latest close above the 50-day EMA
 - latest close above the 200-day EMA
 - at least 40% return over the last 63 trading days, roughly three months
+- 50-day average daily volume above 500,000 shares
 
 ## How the score works
 
@@ -101,7 +102,7 @@ The normalized score is built from three components:
    - close within 25% of 52-week high
    - close at least 30% above 52-week low
    - return over the last 63 trading days is at least 40%
-   - 50-day average volume above the liquidity threshold
+   - 50-day average daily volume above 500,000 shares
 2. **VCP/setup, 30 points**
    - recent price range contraction
    - volume dry-up
