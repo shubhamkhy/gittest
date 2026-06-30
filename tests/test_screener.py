@@ -31,6 +31,7 @@ class ScreenerTests(unittest.TestCase):
         self.assertIsNotNone(result.pivot)
         self.assertIsNotNone(result.suggested_stop)
         self.assertTrue(result.required_filters_passed)
+        self.assertFalse(result.inside_candle_formed)
         passed_rules = {rule.name for rule in result.rules if rule.passed}
         self.assertIn("price_above_minimum", passed_rules)
         self.assertIn("price_above_50ema", passed_rules)
@@ -94,6 +95,16 @@ class ScreenerTests(unittest.TestCase):
             rule.name for rule in low_price_result.rules if not rule.passed
         }
         self.assertIn("price_above_minimum", failed_price_rules)
+
+    def test_marks_inside_candle_when_latest_range_is_inside_previous_day(self) -> None:
+        result = score_stock(
+            "INSIDE.NS",
+            _make_inside_candle_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertTrue(result.inside_candle_formed)
+        self.assertTrue(result.to_dict()["inside_candle_formed"])
 
     def test_csv_loader_accepts_common_ohlcv_header_variants(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -182,6 +193,26 @@ def _make_low_volume_history() -> list[DailyBar]:
 
 def _make_low_price_history() -> list[DailyBar]:
     return _scale_prices(_make_stock_history(), multiplier=0.20)
+
+
+def _make_inside_candle_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    previous = bars[-2]
+    inside_high = previous.high - 0.10
+    inside_low = previous.low + 0.10
+    inside_close = (inside_high + inside_low) / 2
+    latest = bars[-1]
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=inside_close,
+            high=inside_high,
+            low=inside_low,
+            close=inside_close,
+            volume=latest.volume,
+        ),
+    ]
 
 
 def _make_below_ema_history() -> list[DailyBar]:

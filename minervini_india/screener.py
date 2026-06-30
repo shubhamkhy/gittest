@@ -91,6 +91,7 @@ class ScreenResult:
     pivot: float | None
     suggested_stop: float | None
     required_filters_passed: bool = False
+    inside_candle_formed: bool = False
     rules: tuple[RuleEvaluation, ...] = field(default_factory=tuple)
     notes: tuple[str, ...] = field(default_factory=tuple)
 
@@ -118,6 +119,7 @@ class ScreenResult:
                 else None
             ),
             "required_filters_passed": self.required_filters_passed,
+            "inside_candle_formed": self.inside_candle_formed,
             "passed_rules": [rule.name for rule in self.rules if rule.passed],
             "failed_rules": [rule.name for rule in self.rules if not rule.passed],
             "notes": list(self.notes),
@@ -291,6 +293,7 @@ def score_stock(
     ]
     if benchmark is None:
         notes.append("Relative strength was not scored because no benchmark was supplied.")
+    inside_candle_formed = _inside_candle_formed(ordered_bars)
 
     return ScreenResult(
         symbol=symbol,
@@ -305,6 +308,7 @@ def score_stock(
         pivot=pivot,
         suggested_stop=suggested_stop,
         required_filters_passed=required_filters_passed,
+        inside_candle_formed=inside_candle_formed,
         rules=tuple([*trend_rules, *vcp_rules, *rs_rules]),
         notes=tuple(notes),
     )
@@ -570,6 +574,15 @@ def _label_for_score(score: float, breakout: bool) -> str:
 def _required_filters_passed(rules: Sequence[RuleEvaluation]) -> bool:
     passed_rule_names = {rule.name for rule in rules if rule.passed}
     return REQUIRED_FILTER_RULES.issubset(passed_rule_names)
+
+
+def _inside_candle_formed(bars: Sequence[DailyBar]) -> bool:
+    if len(bars) < 2:
+        return False
+
+    previous = bars[-2]
+    latest = bars[-1]
+    return latest.high <= previous.high and latest.low >= previous.low
 
 
 def _points_from_rules(rules: Iterable[RuleEvaluation], maximum: float) -> float:

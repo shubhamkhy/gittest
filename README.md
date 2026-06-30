@@ -10,6 +10,7 @@ using Mark Minervini-inspired concepts:
 - liquidity filter using 50-day average volume
 - volatility contraction pattern (VCP) style setup checks
 - breakout volume confirmation
+- inside-candle marker when the latest high/low sits within the prior day's range
 - optional relative strength versus a benchmark such as NIFTY 50 (`^NSEI`)
 - suggested stop level based on a predefined maximum risk percentage
 
@@ -124,6 +125,10 @@ If no benchmark is supplied, relative strength is not scored and the remaining
 - `building_setup`: improving structure that still needs confirmation
 - `avoid_for_now`: does not currently meet enough rules
 - `insufficient_data`: fewer than 260 daily bars
+
+The `inside_candle` table column is `yes` when the latest candle is inside the
+previous day's range: latest high is at or below the previous high, and latest
+low is at or above the previous low.
 
 The `suggested_stop` value is a simple 8% risk reference from the latest close.
 It is not a promise of execution or loss control; gap risk and liquidity still

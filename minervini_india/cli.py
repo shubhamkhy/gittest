@@ -173,6 +173,7 @@ def _write_results(results: Sequence[ScreenResult], output: str) -> None:
                 "pivot",
                 "suggested_stop",
                 "required_filters_passed",
+                "inside_candle_formed",
             ],
             extrasaction="ignore",
         )
@@ -195,12 +196,22 @@ def _write_table(results: Sequence[ScreenResult]) -> None:
             f"{result.close:.2f}" if result.close is not None else "-",
             f"{result.score:.1f}",
             result.label,
+            "yes" if result.inside_candle_formed else "no",
             f"{result.pivot:.2f}" if result.pivot is not None else "-",
             f"{result.suggested_stop:.2f}" if result.suggested_stop is not None else "-",
         ]
         for result in results
     ]
-    headers = ["symbol", "as_of", "close", "score", "label", "pivot", "stop"]
+    headers = [
+        "symbol",
+        "as_of",
+        "close",
+        "score",
+        "label",
+        "inside_candle",
+        "pivot",
+        "stop",
+    ]
     widths = [
         max(len(str(row[index])) for row in [headers, *rows])
         for index in range(len(headers))
