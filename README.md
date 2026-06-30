@@ -4,6 +4,8 @@ A small Python screening system for Indian equities. It ranks NSE/BSE symbols
 using Mark Minervini-inspired concepts:
 
 - trend-template checks using 50/150/200-day moving averages
+- required price confirmation above the 50-day and 200-day EMAs
+- required 40% or better return over roughly the last three months
 - price location versus 52-week high and low
 - liquidity filter using 50-day average volume
 - volatility contraction pattern (VCP) style setup checks
@@ -81,16 +83,24 @@ indian-minervini \
 
 Supported outputs are `table`, `json`, and `csv`.
 
+By default, CLI results only include stocks that pass the mandatory filters:
+
+- latest close above the 50-day EMA
+- latest close above the 200-day EMA
+- at least 40% return over the last 63 trading days, roughly three months
+
 ## How the score works
 
 The normalized score is built from three components:
 
 1. **Trend template, 50 points**
    - close above 50/150/200-day moving averages
+   - close above the 50-day and 200-day EMAs
    - 50SMA > 150SMA > 200SMA
    - 200SMA rising versus 20 trading days ago
    - close within 25% of 52-week high
    - close at least 30% above 52-week low
+   - return over the last 63 trading days is at least 40%
    - 50-day average volume above the liquidity threshold
 2. **VCP/setup, 30 points**
    - recent price range contraction

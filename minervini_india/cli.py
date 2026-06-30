@@ -35,7 +35,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         filtered = [
             result
             for result in results
-            if result.score >= args.min_score and result.label != "insufficient_data"
+            if result.score >= args.min_score
+            and result.label != "insufficient_data"
+            and result.required_filters_passed
         ][: args.top]
         _write_results(filtered, args.output)
         return 0
@@ -170,6 +172,7 @@ def _write_results(results: Sequence[ScreenResult], output: str) -> None:
                 "relative_strength_pct",
                 "pivot",
                 "suggested_stop",
+                "required_filters_passed",
             ],
             extrasaction="ignore",
         )

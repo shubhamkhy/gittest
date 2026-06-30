@@ -14,6 +14,15 @@ from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
 
+REQUIRED_FILTER_RULES = frozenset(
+    {
+        "price_above_50ema",
+        "price_above_200ema",
+        "at_least_40pct_return_3mo",
+    }
+)
+
+
 @dataclass(frozen=True)
 class DailyBar:
     """One daily OHLCV record."""
@@ -35,9 +44,13 @@ class ScreenConfig:
     sma_mid: int = 150
     sma_long: int = 200
     sma_long_slope_days: int = 20
+    ema_short: int = 50
+    ema_long: int = 200
     high_low_window: int = 252
     min_above_52w_low_pct: float = 0.30
     max_below_52w_high_pct: float = 0.25
+    return_lookback_days: int = 63
+    min_return_3mo_pct: float = 0.40
     vcp_lookback_days: int = 80
     vcp_pocket_days: int = 20
     volume_dry_up_ratio: float = 0.75
@@ -73,6 +86,7 @@ class ScreenResult:
     relative_strength_pct: float | None
     pivot: float | None
     suggested_stop: float | None
+    required_filters_passed: bool = False
     rules: tuple[RuleEvaluation, ...] = field(default_factory=tuple)
     notes: tuple[str, ...] = field(default_factory=tuple)
 
@@ -99,6 +113,7 @@ class ScreenResult:
                 if self.suggested_stop is not None
                 else None
             ),
+            "required_filters_passed": self.required_filters_passed,
             "passed_rules": [rule.name for rule in self.rules if rule.passed],
             "failed_rules": [rule.name for rule in self.rules if not rule.passed],
             "notes": list(self.notes),
@@ -216,6 +231,7 @@ def score_stock(
             relative_strength_pct=None,
             pivot=None,
             suggested_stop=None,
+            required_filters_passed=False,
             notes=(
                 f"Needs at least {active_config.min_history_days} daily bars; "
                 f"found {len(ordered_bars)}.",
@@ -252,6 +268,9 @@ def score_stock(
     raw_score = trend_score + vcp_score + rs_score
     normalized_score = min(100.0, raw_score / maximum_score * 100.0)
     breakout = any(rule.name == "breakout_volume" and rule.passed for rule in vcp_rules)
+    required_filters_passed = _required_filters_passed(trend_rules)
+    if not required_filters_passed:
+        normalized_score = 0.0
     label = _label_for_score(normalized_score, breakout=breakout)
     suggested_stop = latest.close * (1.0 - active_config.max_stop_loss_pct)
     notes = [
@@ -273,6 +292,7 @@ def score_stock(
         relative_strength_pct=rs_pct,
         pivot=pivot,
         suggested_stop=suggested_stop,
+        required_filters_passed=required_filters_passed,
         rules=tuple([*trend_rules, *vcp_rules, *rs_rules]),
         notes=tuple(notes),
     )
@@ -288,10 +308,22 @@ def _score_trend_template(
     sma50 = _simple_moving_average(closes, config.sma_short)
     sma150 = _simple_moving_average(closes, config.sma_mid)
     sma200 = _simple_moving_average(closes, config.sma_long)
+    ema50 = _exponential_moving_average(closes, config.ema_short)
+    ema200 = _exponential_moving_average(closes, config.ema_long)
     sma200_prior = _moving_average_ending_at(
         closes,
         config.sma_long,
         len(closes) - config.sma_long_slope_days,
+    )
+    three_month_return = _trailing_return_from_values(
+        closes,
+        config.return_lookback_days,
+    )
+    three_month_return_detail = (
+        f"{config.return_lookback_days}d return {three_month_return:.2%} "
+        f"vs required {config.min_return_3mo_pct:.2%}"
+        if three_month_return is not None
+        else f"needs {config.return_lookback_days} bars for 3-month return"
     )
     close = closes[-1]
     high_52w = max(highs[-config.high_low_window :])
@@ -305,6 +337,11 @@ def _score_trend_template(
             f"close {close:.2f} vs 50SMA {sma50:.2f}",
         ),
         RuleEvaluation(
+            "price_above_50ema",
+            close > ema50,
+            f"close {close:.2f} vs 50EMA {ema50:.2f}",
+        ),
+        RuleEvaluation(
             "price_above_150sma",
             close > sma150,
             f"close {close:.2f} vs 150SMA {sma150:.2f}",
@@ -313,6 +350,11 @@ def _score_trend_template(
             "price_above_200sma",
             close > sma200,
             f"close {close:.2f} vs 200SMA {sma200:.2f}",
+        ),
+        RuleEvaluation(
+            "price_above_200ema",
+            close > ema200,
+            f"close {close:.2f} vs 200EMA {ema200:.2f}",
         ),
         RuleEvaluation(
             "moving_average_stack",
@@ -333,6 +375,12 @@ def _score_trend_template(
             "at_least_30pct_above_52w_low",
             close >= low_52w * (1.0 + config.min_above_52w_low_pct),
             f"close {close:.2f}, 52w low {low_52w:.2f}",
+        ),
+        RuleEvaluation(
+            "at_least_40pct_return_3mo",
+            three_month_return is not None
+            and three_month_return >= config.min_return_3mo_pct,
+            three_month_return_detail,
         ),
         RuleEvaluation(
             "liquid_volume",
@@ -470,8 +518,20 @@ def _trailing_return(bars: Sequence[DailyBar], lookback_days: int) -> float | No
     ordered = tuple(sorted(bars, key=lambda bar: bar.date))
     if len(ordered) <= lookback_days:
         return None
-    start = ordered[-lookback_days - 1].close
-    end = ordered[-1].close
+    return _trailing_return_from_values(
+        [bar.close for bar in ordered],
+        lookback_days,
+    )
+
+
+def _trailing_return_from_values(
+    values: Sequence[float],
+    lookback_days: int,
+) -> float | None:
+    if len(values) <= lookback_days:
+        return None
+    start = values[-lookback_days - 1]
+    end = values[-1]
     if start <= 0:
         return None
     return (end - start) / start
@@ -487,6 +547,11 @@ def _label_for_score(score: float, breakout: bool) -> str:
     return "avoid_for_now"
 
 
+def _required_filters_passed(rules: Sequence[RuleEvaluation]) -> bool:
+    passed_rule_names = {rule.name for rule in rules if rule.passed}
+    return REQUIRED_FILTER_RULES.issubset(passed_rule_names)
+
+
 def _points_from_rules(rules: Iterable[RuleEvaluation], maximum: float) -> float:
     rule_list = list(rules)
     if not rule_list:
@@ -498,6 +563,17 @@ def _simple_moving_average(values: Sequence[float], window: int) -> float:
     if len(values) < window:
         raise ValueError(f"need {window} values, got {len(values)}")
     return _mean(values[-window:])
+
+
+def _exponential_moving_average(values: Sequence[float], window: int) -> float:
+    if len(values) < window:
+        raise ValueError(f"need {window} values, got {len(values)}")
+
+    smoothing = 2.0 / (window + 1)
+    ema = _mean(values[:window])
+    for value in values[window:]:
+        ema = (value - ema) * smoothing + ema
+    return ema
 
 
 def _moving_average_ending_at(

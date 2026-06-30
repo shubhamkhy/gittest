@@ -22,9 +22,42 @@ class ScreenerTests(unittest.TestCase):
         self.assertGreater(result.relative_strength_pct or 0.0, 0.0)
         self.assertIsNotNone(result.pivot)
         self.assertIsNotNone(result.suggested_stop)
+        self.assertTrue(result.required_filters_passed)
         passed_rules = {rule.name for rule in result.rules if rule.passed}
+        self.assertIn("price_above_50ema", passed_rules)
+        self.assertIn("price_above_200ema", passed_rules)
         self.assertIn("price_above_200sma", passed_rules)
+        self.assertIn("at_least_40pct_return_3mo", passed_rules)
         self.assertIn("breakout_volume", passed_rules)
+
+    def test_requires_ema_position_and_40pct_three_month_return(self) -> None:
+        low_return_result = score_stock(
+            "LOWRETURN.NS",
+            _make_low_return_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(low_return_result.required_filters_passed)
+        self.assertEqual(low_return_result.score, 0.0)
+        self.assertEqual(low_return_result.label, "avoid_for_now")
+        failed_low_return_rules = {
+            rule.name for rule in low_return_result.rules if not rule.passed
+        }
+        self.assertIn("at_least_40pct_return_3mo", failed_low_return_rules)
+
+        below_ema_result = score_stock(
+            "BELOWEMA.NS",
+            _make_below_ema_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(below_ema_result.required_filters_passed)
+        self.assertEqual(below_ema_result.score, 0.0)
+        failed_ema_rules = {
+            rule.name for rule in below_ema_result.rules if not rule.passed
+        }
+        self.assertIn("price_above_50ema", failed_ema_rules)
+        self.assertIn("price_above_200ema", failed_ema_rules)
 
     def test_csv_loader_accepts_common_ohlcv_header_variants(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -78,11 +111,35 @@ class ScreenerTests(unittest.TestCase):
 
 
 def _make_stock_history() -> list[DailyBar]:
+    return _make_history(pre_breakout_step=0.20, post_breakout_step=1.00)
+
+
+def _make_low_return_history() -> list[DailyBar]:
+    return _make_history(pre_breakout_step=0.45, post_breakout_step=0.45)
+
+
+def _make_below_ema_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    latest = bars[-1]
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=90.0,
+            high=92.0,
+            low=88.0,
+            close=90.0,
+            volume=latest.volume,
+        ),
+    ]
+
+
+def _make_history(pre_breakout_step: float, post_breakout_step: float) -> list[DailyBar]:
     bars: list[DailyBar] = []
     start = date(2025, 1, 1)
     close = 100.0
     for index in range(300):
-        close += 0.45
+        close += post_breakout_step if index >= 236 else pre_breakout_step
         spread_pct = _spread_for_index(index)
         high = close * (1 + spread_pct / 2)
         low = close * (1 - spread_pct / 2)
