@@ -1,0 +1,12 @@
+# Yahoo Finance symbols for selected liquid Indian stocks.
+# NSE symbols usually end with .NS; BSE symbols usually end with .BO.
+RELIANCE.NS
+TCS.NS
+INFY.NS
+HDFCBANK.NS
+ICICIBANK.NS
+LT.NS
+SBIN.NS
+BHARTIARTL.NS
+AXISBANK.NS
+MARUTI.NS
