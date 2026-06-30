@@ -61,7 +61,7 @@ class ScreenConfig:
     near_pivot_pct: float = 0.05
     breakout_volume_multiplier: float = 1.40
     rs_lookback_days: int = 126
-    min_avg_volume_50d: float = 500_000
+    min_avg_volume_50d: float = 100_000
     min_price: float = 60.0
     max_stop_loss_pct: float = 0.08
 

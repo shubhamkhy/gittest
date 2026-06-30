@@ -213,14 +213,14 @@ def _make_history(
         spread_pct = _spread_for_index(index)
         high = close * (1 + spread_pct / 2)
         low = close * (1 - spread_pct / 2)
-        volume = 700_000 if liquid else 450_000
+        volume = 700_000 if liquid else 80_000
         if index >= 270:
-            volume = 550_000 if liquid else 220_000
+            volume = 550_000 if liquid else 60_000
         if index == 299:
             high = close * 1.015
             close = max(high, max(bar.high for bar in bars[-20:]) + 1.0)
             low = close * 0.995
-            volume = 1_200_000 if liquid else 850_000
+            volume = 1_200_000 if liquid else 90_000
         bars.append(
             DailyBar(
                 date=start + timedelta(days=index),
