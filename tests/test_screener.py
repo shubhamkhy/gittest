@@ -32,6 +32,7 @@ class ScreenerTests(unittest.TestCase):
         self.assertIsNotNone(result.suggested_stop)
         self.assertTrue(result.required_filters_passed)
         passed_rules = {rule.name for rule in result.rules if rule.passed}
+        self.assertIn("price_above_minimum", passed_rules)
         self.assertIn("price_above_50ema", passed_rules)
         self.assertIn("price_above_200ema", passed_rules)
         self.assertIn("price_above_200sma", passed_rules)
@@ -80,6 +81,19 @@ class ScreenerTests(unittest.TestCase):
             rule.name for rule in low_volume_result.rules if not rule.passed
         }
         self.assertIn("liquid_volume", failed_volume_rules)
+
+        low_price_result = score_stock(
+            "LOWPRICE.NS",
+            _make_low_price_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(low_price_result.required_filters_passed)
+        self.assertEqual(low_price_result.score, 0.0)
+        failed_price_rules = {
+            rule.name for rule in low_price_result.rules if not rule.passed
+        }
+        self.assertIn("price_above_minimum", failed_price_rules)
 
     def test_csv_loader_accepts_common_ohlcv_header_variants(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -166,6 +180,10 @@ def _make_low_volume_history() -> list[DailyBar]:
     )
 
 
+def _make_low_price_history() -> list[DailyBar]:
+    return _scale_prices(_make_stock_history(), multiplier=0.20)
+
+
 def _make_below_ema_history() -> list[DailyBar]:
     bars = _make_stock_history()
     latest = bars[-1]
@@ -214,6 +232,20 @@ def _make_history(
             )
         )
     return bars
+
+
+def _scale_prices(bars: list[DailyBar], multiplier: float) -> list[DailyBar]:
+    return [
+        DailyBar(
+            date=bar.date,
+            open=bar.open * multiplier,
+            high=bar.high * multiplier,
+            low=bar.low * multiplier,
+            close=bar.close * multiplier,
+            volume=bar.volume,
+        )
+        for bar in bars
+    ]
 
 
 def _make_benchmark_history(

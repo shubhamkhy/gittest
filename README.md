@@ -89,6 +89,7 @@ By default, CLI results only include stocks that pass the mandatory filters:
 - latest close above the 200-day EMA
 - at least 40% return over the last 63 trading days, roughly three months
 - 50-day average daily volume above 500,000 shares
+- latest close above 60
 
 ## How the score works
 
@@ -97,6 +98,7 @@ The normalized score is built from three components:
 1. **Trend template, 50 points**
    - close above 50/150/200-day moving averages
    - close above the 50-day and 200-day EMAs
+   - close above 60
    - 50SMA > 150SMA > 200SMA
    - 200SMA rising versus 20 trading days ago
    - close within 25% of 52-week high

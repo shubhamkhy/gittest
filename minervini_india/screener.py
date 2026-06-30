@@ -21,6 +21,7 @@ REQUIRED_FILTER_RULES = frozenset(
         "price_above_200ema",
         "at_least_40pct_return_3mo",
         "liquid_volume",
+        "price_above_minimum",
     }
 )
 
@@ -61,6 +62,7 @@ class ScreenConfig:
     breakout_volume_multiplier: float = 1.40
     rs_lookback_days: int = 126
     min_avg_volume_50d: float = 500_000
+    min_price: float = 60.0
     max_stop_loss_pct: float = 0.08
 
 
@@ -341,6 +343,11 @@ def _score_trend_template(
     avg_volume_50 = _mean(volumes[-50:])
 
     rules = [
+        RuleEvaluation(
+            "price_above_minimum",
+            close > config.min_price,
+            f"close {close:.2f} vs required > {config.min_price:.2f}",
+        ),
         RuleEvaluation(
             "price_above_50sma",
             close > sma50,
