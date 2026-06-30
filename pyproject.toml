@@ -13,10 +13,6 @@ dependencies = []
 
 [project.optional-dependencies]
 live = ["yfinance"]
-dev = ["pytest"]
 
 [project.scripts]
 indian-minervini = "minervini_india.cli:main"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

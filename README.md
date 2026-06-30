@@ -20,19 +20,13 @@ placing any trade.
 Core CSV screening uses only the Python standard library:
 
 ```bash
-python -m pip install -e .
+python3 -m pip install -e .
 ```
 
 For live Yahoo Finance data, install the optional live extra:
 
 ```bash
-python -m pip install -e ".[live]"
-```
-
-For tests:
-
-```bash
-python -m pip install -e ".[dev]"
+python3 -m pip install -e ".[live]"
 ```
 
 ## Run with live NSE symbols
@@ -125,5 +119,5 @@ matter.
 ## Run tests
 
 ```bash
-python -m pytest
+python3 -m unittest
 ```

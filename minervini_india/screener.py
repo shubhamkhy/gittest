@@ -156,7 +156,7 @@ def load_yahoo_history(symbol: str, period: str = "18mo") -> list[DailyBar]:
     except ImportError as exc:
         raise RuntimeError(
             "Live data requires yfinance. Install with: "
-            "python -m pip install 'indian-minervini-screener[live]'"
+            "python3 -m pip install 'indian-minervini-screener[live]'"
         ) from exc
 
     frame = yf.Ticker(symbol).history(period=period, auto_adjust=False)

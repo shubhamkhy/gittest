@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .screener import (
+    DailyBar,
     ScreenResult,
     load_csv_history,
     load_yahoo_history,
@@ -131,8 +132,8 @@ def _load_histories(
     data_dir: Path | None,
     live: bool,
     period: str,
-) -> dict[str, object]:
-    histories = {}
+) -> dict[str, list[DailyBar]]:
+    histories: dict[str, list[DailyBar]] = {}
     for symbol in symbols:
         if live:
             histories[symbol] = load_yahoo_history(symbol, period=period)
@@ -143,7 +144,7 @@ def _load_histories(
     return histories
 
 
-def _load_benchmark(args: argparse.Namespace) -> object | None:
+def _load_benchmark(args: argparse.Namespace) -> list[DailyBar] | None:
     if args.live:
         return load_yahoo_history(args.benchmark, period=args.period)
     if args.benchmark_data:
