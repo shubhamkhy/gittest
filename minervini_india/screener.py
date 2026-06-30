@@ -24,6 +24,7 @@ REQUIRED_FILTER_RULES = frozenset(
         "price_above_minimum",
         "within_10pct_of_nearest_high",
         "non_negative_daily_change",
+        "bullish_daily_candle",
     }
 )
 
@@ -256,6 +257,7 @@ def score_stock(
             ),
         )
 
+    opens = [bar.open for bar in ordered_bars]
     closes = [bar.close for bar in ordered_bars]
     highs = [bar.high for bar in ordered_bars]
     lows = [bar.low for bar in ordered_bars]
@@ -263,6 +265,7 @@ def score_stock(
     latest = ordered_bars[-1]
 
     trend_score, trend_rules = _score_trend_template(
+        opens=opens,
         closes=closes,
         highs=highs,
         lows=lows,
@@ -319,6 +322,7 @@ def score_stock(
 
 
 def _score_trend_template(
+    opens: Sequence[float],
     closes: Sequence[float],
     highs: Sequence[float],
     lows: Sequence[float],
@@ -345,6 +349,7 @@ def _score_trend_template(
         if three_month_return is not None
         else f"needs {config.return_lookback_days} bars for 3-month return"
     )
+    open_price = opens[-1]
     close = closes[-1]
     previous_close = closes[-2]
     daily_change_pct = (
@@ -374,6 +379,11 @@ def _score_trend_template(
                 f"close {close:.2f} vs previous close {previous_close:.2f}, "
                 f"change {daily_change_pct:.2%}"
             ),
+        ),
+        RuleEvaluation(
+            "bullish_daily_candle",
+            close > open_price,
+            f"close {close:.2f} vs open {open_price:.2f}",
         ),
         RuleEvaluation(
             "price_above_50sma",

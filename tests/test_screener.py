@@ -41,6 +41,7 @@ class ScreenerTests(unittest.TestCase):
         self.assertIn("liquid_volume", passed_rules)
         self.assertIn("within_10pct_of_nearest_high", passed_rules)
         self.assertIn("non_negative_daily_change", passed_rules)
+        self.assertIn("bullish_daily_candle", passed_rules)
         self.assertIn("breakout_volume", passed_rules)
 
     def test_requires_ema_position_return_and_average_volume(self) -> None:
@@ -123,6 +124,19 @@ class ScreenerTests(unittest.TestCase):
             rule.name for rule in negative_day_result.rules if not rule.passed
         }
         self.assertIn("non_negative_daily_change", failed_daily_rules)
+
+        red_candle_result = score_stock(
+            "REDCANDLE.NS",
+            _make_red_candle_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(red_candle_result.required_filters_passed)
+        self.assertEqual(red_candle_result.score, 0.0)
+        failed_candle_rules = {
+            rule.name for rule in red_candle_result.rules if not rule.passed
+        }
+        self.assertIn("bullish_daily_candle", failed_candle_rules)
 
     def test_marks_inside_candle_when_latest_range_is_inside_previous_day(self) -> None:
         result = score_stock(
@@ -300,6 +314,23 @@ def _make_negative_day_history() -> list[DailyBar]:
             high=previous.close * 1.01,
             low=negative_close * 0.99,
             close=negative_close,
+            volume=latest.volume,
+        ),
+    ]
+
+
+def _make_red_candle_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    latest = bars[-1]
+    red_open = latest.close * 1.01
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=red_open,
+            high=red_open * 1.001,
+            low=latest.close * 0.995,
+            close=latest.close,
             volume=latest.volume,
         ),
     ]
