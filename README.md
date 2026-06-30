@@ -7,6 +7,7 @@ using Mark Minervini-inspired concepts:
 - required price confirmation above the 50-day and 200-day EMAs
 - required 40% or better return over roughly the last three months
 - required current price within 10% of the nearest recent high
+- required latest close at or above the previous day's close
 - price location versus 52-week high and low
 - liquidity filter using 50-day average volume
 - volatility contraction pattern (VCP) style setup checks
@@ -93,6 +94,7 @@ By default, CLI results only include stocks that pass the mandatory filters:
 - 50-day average daily volume above 100,000 shares
 - latest close above 60
 - latest close within 10% of the highest high from the prior 20 trading days
+- latest close at or above the previous day's close
 
 ## How the score works
 
@@ -103,6 +105,7 @@ The normalized score is built from three components:
    - close above the 50-day and 200-day EMAs
    - close above 60
    - close within 10% of the highest high from the prior 20 trading days
+   - latest close at or above the previous day's close
    - 50SMA > 150SMA > 200SMA
    - 200SMA rising versus 20 trading days ago
    - close within 25% of 52-week high
