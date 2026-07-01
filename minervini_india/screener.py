@@ -23,6 +23,7 @@ REQUIRED_FILTER_RULES = frozenset(
         "liquid_volume",
         "price_above_minimum",
         "within_10pct_of_nearest_high",
+        "min_distance_from_nearest_high",
         "bullish_daily_candle",
         "liquid_traded_value",
         "not_overextended_from_50ema",
@@ -69,9 +70,10 @@ class ScreenConfig:
     min_avg_traded_value_50d: float = 10_000_000
     min_price: float = 60.0
     nearest_high_lookback_days: int = 20
+    min_nearest_high_distance_pct: float = 0.06
     max_nearest_high_distance_pct: float = 0.10
     max_above_50ema_pct: float = 0.30
-    min_success_vcp_score: float = 20.0
+    min_success_vcp_score: float = 21.0
     max_stop_loss_pct: float = 0.08
 
 
@@ -536,6 +538,15 @@ def _score_trend_template(
             (
                 f"close {close:.2f}, nearest {config.nearest_high_lookback_days}d "
                 f"prior high {nearest_high:.2f}, distance {nearest_high_distance_pct:.2%}"
+            ),
+        ),
+        RuleEvaluation(
+            "min_distance_from_nearest_high",
+            abs(nearest_high_distance_pct) >= config.min_nearest_high_distance_pct,
+            (
+                f"close {close:.2f}, nearest {config.nearest_high_lookback_days}d "
+                f"prior high {nearest_high:.2f}, distance {nearest_high_distance_pct:.2%} "
+                f"vs required >= {config.min_nearest_high_distance_pct:.2%}"
             ),
         ),
         RuleEvaluation(

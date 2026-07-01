@@ -7,6 +7,7 @@ using Mark Minervini-inspired concepts:
 - required price confirmation above the 50-day and 200-day EMAs
 - required 40% or better return over roughly the last three months
 - required current price within 10% of the nearest recent high
+- required current price at least 6% away from the nearest recent high
 - required latest close above the latest open
 - price location versus 52-week high and low
 - liquidity filter using 50-day average volume
@@ -113,10 +114,11 @@ By default, CLI results only include stocks that pass the mandatory filters:
 - 50-day average daily volume above 100,000 shares
 - latest close above 60
 - latest close within 10% of the highest high from the prior 20 trading days
+- latest close at least 6% away from the highest high from the prior 20 trading days
 - latest close above the latest open
 - latest close no more than 30% above the 50-day EMA
 - 50-day average traded value above 10,000,000
-- either a strict inside candle or VCP/setup score of at least 20
+- either a strict inside candle or VCP/setup score of at least 21
 
 ## How the score works
 
@@ -127,6 +129,7 @@ The normalized score is built from three components:
    - close above the 50-day and 200-day EMAs
    - close above 60
    - close within 10% of the highest high from the prior 20 trading days
+   - close at least 6% away from the highest high from the prior 20 trading days
    - latest close above the latest open
    - close no more than 30% above the 50-day EMA
    - 50SMA > 150SMA > 200SMA
@@ -142,7 +145,7 @@ The normalized score is built from three components:
    - tight recent closes
    - close near the pivot
    - breakout above pivot on strong volume
-   - mandatory quality gate passes when this VCP score is at least 20, or when
+   - mandatory quality gate passes when this VCP score is at least 21, or when
      a strict inside candle has formed
 3. **Relative strength, 20 points**
    - stock return versus benchmark return over roughly six months

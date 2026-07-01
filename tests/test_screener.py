@@ -24,14 +24,14 @@ class ScreenerTests(unittest.TestCase):
 
         result = score_stock("EXAMPLE.NS", stock_bars, benchmark=benchmark_bars)
 
-        self.assertEqual(result.label, "breakout_candidate")
-        self.assertGreaterEqual(result.score, 85.0)
+        self.assertEqual(result.label, "watchlist")
+        self.assertGreaterEqual(result.score, 75.0)
         self.assertIsNotNone(result.relative_strength_pct)
         self.assertGreater(result.relative_strength_pct or 0.0, 0.0)
         self.assertIsNotNone(result.pivot)
         self.assertIsNotNone(result.suggested_stop)
         self.assertTrue(result.required_filters_passed)
-        self.assertFalse(result.inside_candle_formed)
+        self.assertTrue(result.inside_candle_formed)
         passed_rules = {rule.name for rule in result.rules if rule.passed}
         self.assertIn("price_above_minimum", passed_rules)
         self.assertIn("price_above_50ema", passed_rules)
@@ -41,10 +41,10 @@ class ScreenerTests(unittest.TestCase):
         self.assertIn("liquid_volume", passed_rules)
         self.assertIn("liquid_traded_value", passed_rules)
         self.assertIn("within_10pct_of_nearest_high", passed_rules)
+        self.assertIn("min_distance_from_nearest_high", passed_rules)
         self.assertIn("not_overextended_from_50ema", passed_rules)
         self.assertIn("bullish_daily_candle", passed_rules)
         self.assertIn("successful_setup_quality", passed_rules)
-        self.assertIn("breakout_volume", passed_rules)
         self.assertIsNotNone(result.return_3mo_pct)
         self.assertIsNotNone(result.avg_volume_50d)
         self.assertIsNotNone(result.avg_traded_value_50d)
@@ -131,6 +131,19 @@ class ScreenerTests(unittest.TestCase):
             rule.name for rule in far_from_high_result.rules if not rule.passed
         }
         self.assertIn("within_10pct_of_nearest_high", failed_high_rules)
+
+        too_close_high_result = score_stock(
+            "CLOSEHIGH.NS",
+            _make_too_close_to_nearest_high_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(too_close_high_result.required_filters_passed)
+        self.assertEqual(too_close_high_result.score, 0.0)
+        failed_close_high_rules = {
+            rule.name for rule in too_close_high_result.rules if not rule.passed
+        }
+        self.assertIn("min_distance_from_nearest_high", failed_close_high_rules)
 
         overextended_result = score_stock(
             "EXTENDED.NS",
@@ -249,7 +262,7 @@ class ScreenerTests(unittest.TestCase):
 
 
 def _make_stock_history() -> list[DailyBar]:
-    return _make_history(pre_breakout_step=0.20, post_breakout_step=1.00)
+    return _make_history(pre_breakout_step=0.20, post_breakout_step=1.20)
 
 
 def _make_low_return_history() -> list[DailyBar]:
@@ -328,6 +341,24 @@ def _make_far_from_nearest_high_history() -> list[DailyBar]:
             volume=previous.volume,
         ),
         latest,
+    ]
+
+
+def _make_too_close_to_nearest_high_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    latest = bars[-1]
+    nearest_high = max(bar.high for bar in bars[-21:-1])
+    close = nearest_high * 0.99
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=close * 0.998,
+            high=close * 1.005,
+            low=close * 0.995,
+            close=close,
+            volume=latest.volume,
+        ),
     ]
 
 
@@ -420,10 +451,19 @@ def _make_history(
         volume = 700_000 if liquid else 80_000
         if index >= 270:
             volume = 550_000 if liquid else 60_000
+        if index == 298:
+            high = close * 1.12
+            low = close * 0.88
         if index == 299:
-            high = close * 1.015
-            close = max(high, max(bar.high for bar in bars[-20:]) + 1.0)
-            low = close * 0.995
+            nearest_high = max(bar.high for bar in bars[-20:])
+            previous = bars[-1]
+            close = nearest_high * 0.94
+            high = previous.high - 0.50
+            low = previous.low + 0.50
+            if close >= high:
+                close = (high + low) / 2
+            if close <= low:
+                close = (high + low) / 2
             volume = 1_200_000 if liquid else 90_000
         bars.append(
             DailyBar(
