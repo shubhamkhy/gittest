@@ -31,7 +31,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             period=args.period,
         )
         benchmark = _load_benchmark(args)
-        results = screen_universe(histories, benchmark=benchmark)
+        sector_map = _load_sector_map(args.sector_file)
+        results = screen_universe(
+            histories,
+            benchmark=benchmark,
+            sector_map=sector_map,
+        )
         filtered = [
             result
             for result in results
@@ -84,6 +89,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--benchmark-data",
         type=Path,
         help="CSV file for benchmark history when using --data-dir.",
+    )
+    parser.add_argument(
+        "--sector-file",
+        type=Path,
+        help=(
+            "Optional CSV with symbol and sector columns. Used to show sector "
+            "and count matching stocks per sector."
+        ),
     )
     parser.add_argument(
         "--period",
@@ -154,6 +167,36 @@ def _load_benchmark(args: argparse.Namespace) -> list[DailyBar] | None:
     return None
 
 
+def _load_sector_map(path: Path | None) -> dict[str, str] | None:
+    if path is None:
+        return None
+
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        if not reader.fieldnames:
+            raise ValueError(f"{path} has no header row")
+
+        normalized_fields = {
+            field.strip().lower().replace(" ", "_").replace("-", "_"): field
+            for field in reader.fieldnames
+        }
+        missing = [
+            field
+            for field in ("symbol", "sector")
+            if field not in normalized_fields
+        ]
+        if missing:
+            raise ValueError(f"{path} is missing columns: {', '.join(missing)}")
+
+        sector_map: dict[str, str] = {}
+        for row in reader:
+            symbol = row[normalized_fields["symbol"]].strip().upper()
+            sector = row[normalized_fields["sector"]].strip()
+            if symbol and sector:
+                sector_map[symbol] = sector
+        return sector_map
+
+
 def _write_results(results: Sequence[ScreenResult], output: str) -> None:
     if output == "json":
         print(json.dumps([result.to_dict() for result in results], indent=2))
@@ -174,6 +217,18 @@ def _write_results(results: Sequence[ScreenResult], output: str) -> None:
                 "suggested_stop",
                 "required_filters_passed",
                 "inside_candle_formed",
+                "inside_candle_trigger",
+                "inside_candle_stop",
+                "ema50",
+                "ema200",
+                "return_3mo_pct",
+                "avg_volume_50d",
+                "avg_traded_value_50d",
+                "nearest_high",
+                "nearest_high_distance_pct",
+                "pct_above_50ema",
+                "sector",
+                "sector_match_count",
             ],
             extrasaction="ignore",
         )
@@ -196,6 +251,37 @@ def _write_table(results: Sequence[ScreenResult]) -> None:
             f"{result.close:.2f}" if result.close is not None else "-",
             f"{result.score:.1f}",
             result.label,
+            f"{result.return_3mo_pct:.1f}" if result.return_3mo_pct is not None else "-",
+            f"{result.ema50:.2f}" if result.ema50 is not None else "-",
+            f"{result.ema200:.2f}" if result.ema200 is not None else "-",
+            f"{result.avg_volume_50d:.0f}" if result.avg_volume_50d is not None else "-",
+            (
+                f"{result.avg_traded_value_50d / 10_000_000:.1f}cr"
+                if result.avg_traded_value_50d is not None
+                else "-"
+            ),
+            (
+                f"{result.nearest_high_distance_pct:.1f}"
+                if result.nearest_high_distance_pct is not None
+                else "-"
+            ),
+            (
+                f"{result.pct_above_50ema:.1f}"
+                if result.pct_above_50ema is not None
+                else "-"
+            ),
+            (
+                f"{result.inside_candle_trigger:.2f}"
+                if result.inside_candle_trigger is not None
+                else "-"
+            ),
+            (
+                f"{result.inside_candle_stop:.2f}"
+                if result.inside_candle_stop is not None
+                else "-"
+            ),
+            result.sector or "-",
+            str(result.sector_match_count) if result.sector_match_count is not None else "-",
             f"{result.pivot:.2f}" if result.pivot is not None else "-",
             f"{result.suggested_stop:.2f}" if result.suggested_stop is not None else "-",
         ]
@@ -207,6 +293,17 @@ def _write_table(results: Sequence[ScreenResult]) -> None:
         "close",
         "score",
         "label",
+        "3m%",
+        "50ema",
+        "200ema",
+        "avg_vol",
+        "avg_value",
+        "dist_high%",
+        "ext_50ema%",
+        "inside_buy",
+        "inside_sl",
+        "sector",
+        "sector_hits",
         "pivot",
         "stop",
     ]

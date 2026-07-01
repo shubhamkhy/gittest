@@ -10,9 +10,11 @@ using Mark Minervini-inspired concepts:
 - required latest close above the latest open
 - price location versus 52-week high and low
 - liquidity filter using 50-day average volume
+- traded-value liquidity quality using 50-day average close x volume
 - volatility contraction pattern (VCP) style setup checks
 - breakout volume confirmation
 - inside-candle marker when the latest high/low sits within the prior day's range
+- optional sector grouping from a user-supplied symbol/sector CSV
 - optional relative strength versus a benchmark such as NIFTY 50 (`^NSEI`)
 - suggested stop level based on a predefined maximum risk percentage
 
@@ -56,6 +58,22 @@ indian-minervini \
   --min-score 60
 ```
 
+To show sector/group strength, pass an optional CSV with `symbol` and `sector`
+columns:
+
+```csv
+symbol,sector
+RATEGAIN.NS,Technology
+WHEELS.NS,Auto Components
+```
+
+```bash
+indian-minervini \
+  --symbols-file examples/nse_symbols.txt \
+  --live \
+  --sector-file sectors.csv
+```
+
 ## Run with local CSV data
 
 Create one CSV per symbol, named exactly like the symbol:
@@ -95,6 +113,8 @@ By default, CLI results only include stocks that pass the mandatory filters:
 - latest close above 60
 - latest close within 10% of the highest high from the prior 20 trading days
 - latest close above the latest open
+- latest close no more than 30% above the 50-day EMA
+- 50-day average traded value above 10,000,000
 
 ## How the score works
 
@@ -106,12 +126,14 @@ The normalized score is built from three components:
    - close above 60
    - close within 10% of the highest high from the prior 20 trading days
    - latest close above the latest open
+   - close no more than 30% above the 50-day EMA
    - 50SMA > 150SMA > 200SMA
    - 200SMA rising versus 20 trading days ago
    - close within 25% of 52-week high
    - close at least 30% above 52-week low
    - return over the last 63 trading days is at least 40%
    - 50-day average daily volume above 100,000 shares
+   - 50-day average traded value above 10,000,000
 2. **VCP/setup, 30 points**
    - recent price range contraction
    - volume dry-up
@@ -136,6 +158,12 @@ The table output prefixes the symbol with `*` when the latest completed candle
 is a strict inside candle: latest high is below the previous high, latest low is
 above the previous low, and both candles have valid high/low ranges. CSV and JSON
 outputs expose the same signal as `inside_candle_formed`.
+
+When an inside candle is marked, `inside_buy` is the breakout trigger above the
+inside candle high and `inside_sl` is the reference stop below the inside candle
+low. The table also includes reason columns such as 3-month return, 50/200 EMA,
+average volume, average traded value, distance to recent high, 50-EMA extension,
+and optional sector hit counts.
 
 The `suggested_stop` value is a simple 8% risk reference from the latest close.
 It is not a promise of execution or loss control; gap risk and liquidity still

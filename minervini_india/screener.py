@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import csv
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
@@ -24,6 +24,8 @@ REQUIRED_FILTER_RULES = frozenset(
         "price_above_minimum",
         "within_10pct_of_nearest_high",
         "bullish_daily_candle",
+        "liquid_traded_value",
+        "not_overextended_from_50ema",
     }
 )
 
@@ -64,9 +66,11 @@ class ScreenConfig:
     breakout_volume_multiplier: float = 1.40
     rs_lookback_days: int = 126
     min_avg_volume_50d: float = 100_000
+    min_avg_traded_value_50d: float = 10_000_000
     min_price: float = 60.0
     nearest_high_lookback_days: int = 20
     max_nearest_high_distance_pct: float = 0.10
+    max_above_50ema_pct: float = 0.30
     max_stop_loss_pct: float = 0.08
 
 
@@ -77,6 +81,20 @@ class RuleEvaluation:
     name: str
     passed: bool
     detail: str
+
+
+@dataclass(frozen=True)
+class TrendMetrics:
+    """Computed values used to explain trend and liquidity filters."""
+
+    ema50: float
+    ema200: float
+    return_3mo_pct: float | None
+    avg_volume_50d: float
+    avg_traded_value_50d: float
+    nearest_high: float
+    nearest_high_distance_pct: float
+    pct_above_50ema: float
 
 
 @dataclass(frozen=True)
@@ -96,6 +114,18 @@ class ScreenResult:
     suggested_stop: float | None
     required_filters_passed: bool = False
     inside_candle_formed: bool = False
+    ema50: float | None = None
+    ema200: float | None = None
+    return_3mo_pct: float | None = None
+    avg_volume_50d: float | None = None
+    avg_traded_value_50d: float | None = None
+    nearest_high: float | None = None
+    nearest_high_distance_pct: float | None = None
+    pct_above_50ema: float | None = None
+    inside_candle_trigger: float | None = None
+    inside_candle_stop: float | None = None
+    sector: str | None = None
+    sector_match_count: int | None = None
     rules: tuple[RuleEvaluation, ...] = field(default_factory=tuple)
     notes: tuple[str, ...] = field(default_factory=tuple)
 
@@ -124,6 +154,50 @@ class ScreenResult:
             ),
             "required_filters_passed": self.required_filters_passed,
             "inside_candle_formed": self.inside_candle_formed,
+            "ema50": round(self.ema50, 2) if self.ema50 is not None else None,
+            "ema200": round(self.ema200, 2) if self.ema200 is not None else None,
+            "return_3mo_pct": (
+                round(self.return_3mo_pct, 2)
+                if self.return_3mo_pct is not None
+                else None
+            ),
+            "avg_volume_50d": (
+                round(self.avg_volume_50d, 0)
+                if self.avg_volume_50d is not None
+                else None
+            ),
+            "avg_traded_value_50d": (
+                round(self.avg_traded_value_50d, 0)
+                if self.avg_traded_value_50d is not None
+                else None
+            ),
+            "nearest_high": (
+                round(self.nearest_high, 2)
+                if self.nearest_high is not None
+                else None
+            ),
+            "nearest_high_distance_pct": (
+                round(self.nearest_high_distance_pct, 2)
+                if self.nearest_high_distance_pct is not None
+                else None
+            ),
+            "pct_above_50ema": (
+                round(self.pct_above_50ema, 2)
+                if self.pct_above_50ema is not None
+                else None
+            ),
+            "inside_candle_trigger": (
+                round(self.inside_candle_trigger, 2)
+                if self.inside_candle_trigger is not None
+                else None
+            ),
+            "inside_candle_stop": (
+                round(self.inside_candle_stop, 2)
+                if self.inside_candle_stop is not None
+                else None
+            ),
+            "sector": self.sector,
+            "sector_match_count": self.sector_match_count,
             "passed_rules": [rule.name for rule in self.rules if rule.passed],
             "failed_rules": [rule.name for rule in self.rules if not rule.passed],
             "notes": list(self.notes),
@@ -215,14 +289,22 @@ def screen_universe(
     histories: Mapping[str, Sequence[DailyBar]],
     benchmark: Sequence[DailyBar] | None = None,
     config: ScreenConfig | None = None,
+    sector_map: Mapping[str, str] | None = None,
 ) -> list[ScreenResult]:
     """Score and rank a collection of symbols."""
 
     active_config = config or ScreenConfig()
     results = [
-        score_stock(symbol, bars, benchmark=benchmark, config=active_config)
+        score_stock(
+            symbol,
+            bars,
+            benchmark=benchmark,
+            config=active_config,
+            sector=sector_map.get(symbol) if sector_map else None,
+        )
         for symbol, bars in histories.items()
     ]
+    results = _with_sector_strength(results)
     return sorted(results, key=lambda result: result.score, reverse=True)
 
 
@@ -231,6 +313,7 @@ def score_stock(
     bars: Sequence[DailyBar],
     benchmark: Sequence[DailyBar] | None = None,
     config: ScreenConfig | None = None,
+    sector: str | None = None,
 ) -> ScreenResult:
     """Score one stock using trend-template, VCP, and relative-strength rules."""
 
@@ -263,7 +346,7 @@ def score_stock(
     volumes = [bar.volume for bar in ordered_bars]
     latest = ordered_bars[-1]
 
-    trend_score, trend_rules = _score_trend_template(
+    trend_score, trend_rules, trend_metrics = _score_trend_template(
         opens=opens,
         closes=closes,
         highs=highs,
@@ -300,6 +383,10 @@ def score_stock(
     if benchmark is None:
         notes.append("Relative strength was not scored because no benchmark was supplied.")
     inside_candle_formed = _inside_candle_formed(ordered_bars)
+    inside_trigger, inside_stop = _inside_candle_levels(
+        latest,
+        inside_candle_formed=inside_candle_formed,
+    )
 
     return ScreenResult(
         symbol=symbol,
@@ -315,6 +402,17 @@ def score_stock(
         suggested_stop=suggested_stop,
         required_filters_passed=required_filters_passed,
         inside_candle_formed=inside_candle_formed,
+        ema50=trend_metrics.ema50,
+        ema200=trend_metrics.ema200,
+        return_3mo_pct=trend_metrics.return_3mo_pct,
+        avg_volume_50d=trend_metrics.avg_volume_50d,
+        avg_traded_value_50d=trend_metrics.avg_traded_value_50d,
+        nearest_high=trend_metrics.nearest_high,
+        nearest_high_distance_pct=trend_metrics.nearest_high_distance_pct,
+        pct_above_50ema=trend_metrics.pct_above_50ema,
+        inside_candle_trigger=inside_trigger,
+        inside_candle_stop=inside_stop,
+        sector=sector,
         rules=tuple([*trend_rules, *vcp_rules, *rs_rules]),
         notes=tuple(notes),
     )
@@ -327,7 +425,7 @@ def _score_trend_template(
     lows: Sequence[float],
     volumes: Sequence[float],
     config: ScreenConfig,
-) -> tuple[float, list[RuleEvaluation]]:
+) -> tuple[float, list[RuleEvaluation], TrendMetrics]:
     sma50 = _simple_moving_average(closes, config.sma_short)
     sma150 = _simple_moving_average(closes, config.sma_mid)
     sma200 = _simple_moving_average(closes, config.sma_long)
@@ -353,6 +451,9 @@ def _score_trend_template(
     high_52w = max(highs[-config.high_low_window :])
     low_52w = min(lows[-config.high_low_window :])
     avg_volume_50 = _mean(volumes[-50:])
+    avg_traded_value_50 = _mean(
+        [close_value * volume for close_value, volume in zip(closes[-50:], volumes[-50:])]
+    )
     nearest_high = _nearest_prior_high(
         highs,
         lookback_days=config.nearest_high_lookback_days,
@@ -360,6 +461,7 @@ def _score_trend_template(
     nearest_high_distance_pct = (
         (nearest_high - close) / nearest_high if nearest_high > 0 else math.inf
     )
+    pct_above_50ema = (close - ema50) / ema50 if ema50 > 0 else math.inf
 
     rules = [
         RuleEvaluation(
@@ -381,6 +483,14 @@ def _score_trend_template(
             "price_above_50ema",
             close > ema50,
             f"close {close:.2f} vs 50EMA {ema50:.2f}",
+        ),
+        RuleEvaluation(
+            "not_overextended_from_50ema",
+            pct_above_50ema <= config.max_above_50ema_pct,
+            (
+                f"close {close:.2f} is {pct_above_50ema:.2%} above 50EMA "
+                f"{ema50:.2f}; max {config.max_above_50ema_pct:.2%}"
+            ),
         ),
         RuleEvaluation(
             "price_above_150sma",
@@ -439,8 +549,28 @@ def _score_trend_template(
                 f"vs required > {config.min_avg_volume_50d:.0f}"
             ),
         ),
+        RuleEvaluation(
+            "liquid_traded_value",
+            avg_traded_value_50 > config.min_avg_traded_value_50d,
+            (
+                f"50d avg traded value {avg_traded_value_50:.0f} "
+                f"vs required > {config.min_avg_traded_value_50d:.0f}"
+            ),
+        ),
     ]
-    return _points_from_rules(rules, maximum=50.0), rules
+    metrics = TrendMetrics(
+        ema50=ema50,
+        ema200=ema200,
+        return_3mo_pct=three_month_return * 100.0
+        if three_month_return is not None
+        else None,
+        avg_volume_50d=avg_volume_50,
+        avg_traded_value_50d=avg_traded_value_50,
+        nearest_high=nearest_high,
+        nearest_high_distance_pct=nearest_high_distance_pct * 100.0,
+        pct_above_50ema=pct_above_50ema * 100.0,
+    )
+    return _points_from_rules(rules, maximum=50.0), rules, metrics
 
 
 def _score_vcp_setup(
@@ -614,6 +744,33 @@ def _inside_candle_formed(bars: Sequence[DailyBar]) -> bool:
         return False
 
     return latest.high < previous.high and latest.low > previous.low
+
+
+def _inside_candle_levels(
+    latest: DailyBar,
+    inside_candle_formed: bool,
+) -> tuple[float | None, float | None]:
+    if not inside_candle_formed:
+        return None, None
+    return latest.high, latest.low
+
+
+def _with_sector_strength(results: Sequence[ScreenResult]) -> list[ScreenResult]:
+    counts: dict[str, int] = {}
+    for result in results:
+        if result.sector and result.required_filters_passed:
+            counts[result.sector] = counts.get(result.sector, 0) + 1
+
+    if not counts:
+        return list(results)
+
+    return [
+        replace(
+            result,
+            sector_match_count=counts.get(result.sector, 0) if result.sector else None,
+        )
+        for result in results
+    ]
 
 
 def _has_valid_range(bar: DailyBar) -> bool:
