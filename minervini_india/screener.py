@@ -71,6 +71,7 @@ class ScreenConfig:
     nearest_high_lookback_days: int = 20
     max_nearest_high_distance_pct: float = 0.10
     max_above_50ema_pct: float = 0.30
+    min_success_vcp_score: float = 20.0
     max_stop_loss_pct: float = 0.08
 
 
@@ -371,7 +372,15 @@ def score_stock(
     raw_score = trend_score + vcp_score + rs_score
     normalized_score = min(100.0, raw_score / maximum_score * 100.0)
     breakout = any(rule.name == "breakout_volume" and rule.passed for rule in vcp_rules)
-    required_filters_passed = _required_filters_passed(trend_rules)
+    inside_candle_formed = _inside_candle_formed(ordered_bars)
+    quality_rule = _successful_setup_quality_rule(
+        inside_candle_formed=inside_candle_formed,
+        vcp_score=vcp_score,
+        config=active_config,
+    )
+    required_filters_passed = (
+        _required_filters_passed(trend_rules) and quality_rule.passed
+    )
     if not required_filters_passed:
         normalized_score = 0.0
     label = _label_for_score(normalized_score, breakout=breakout)
@@ -382,7 +391,6 @@ def score_stock(
     ]
     if benchmark is None:
         notes.append("Relative strength was not scored because no benchmark was supplied.")
-    inside_candle_formed = _inside_candle_formed(ordered_bars)
     inside_trigger, inside_stop = _inside_candle_levels(
         latest,
         inside_candle_formed=inside_candle_formed,
@@ -413,7 +421,7 @@ def score_stock(
         inside_candle_trigger=inside_trigger,
         inside_candle_stop=inside_stop,
         sector=sector,
-        rules=tuple([*trend_rules, *vcp_rules, *rs_rules]),
+        rules=tuple([*trend_rules, *vcp_rules, quality_rule, *rs_rules]),
         notes=tuple(notes),
     )
 
@@ -753,6 +761,26 @@ def _inside_candle_levels(
     if not inside_candle_formed:
         return None, None
     return latest.high, latest.low
+
+
+def _successful_setup_quality_rule(
+    inside_candle_formed: bool,
+    vcp_score: float,
+    config: ScreenConfig,
+) -> RuleEvaluation:
+    passed = inside_candle_formed or vcp_score >= config.min_success_vcp_score
+    return RuleEvaluation(
+        "successful_setup_quality",
+        passed,
+        (
+            "inside candle formed"
+            if inside_candle_formed
+            else (
+                f"VCP score {vcp_score:.1f} vs required "
+                f"{config.min_success_vcp_score:.1f}"
+            )
+        ),
+    )
 
 
 def _with_sector_strength(results: Sequence[ScreenResult]) -> list[ScreenResult]:

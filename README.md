@@ -14,6 +14,7 @@ using Mark Minervini-inspired concepts:
 - volatility contraction pattern (VCP) style setup checks
 - breakout volume confirmation
 - inside-candle marker when the latest high/low sits within the prior day's range
+- successful-setup quality gate requiring an inside candle or strong VCP score
 - optional sector grouping from a user-supplied symbol/sector CSV
 - optional relative strength versus a benchmark such as NIFTY 50 (`^NSEI`)
 - suggested stop level based on a predefined maximum risk percentage
@@ -115,6 +116,7 @@ By default, CLI results only include stocks that pass the mandatory filters:
 - latest close above the latest open
 - latest close no more than 30% above the 50-day EMA
 - 50-day average traded value above 10,000,000
+- either a strict inside candle or VCP/setup score of at least 20
 
 ## How the score works
 
@@ -140,6 +142,8 @@ The normalized score is built from three components:
    - tight recent closes
    - close near the pivot
    - breakout above pivot on strong volume
+   - mandatory quality gate passes when this VCP score is at least 20, or when
+     a strict inside candle has formed
 3. **Relative strength, 20 points**
    - stock return versus benchmark return over roughly six months
 

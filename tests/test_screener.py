@@ -43,6 +43,7 @@ class ScreenerTests(unittest.TestCase):
         self.assertIn("within_10pct_of_nearest_high", passed_rules)
         self.assertIn("not_overextended_from_50ema", passed_rules)
         self.assertIn("bullish_daily_candle", passed_rules)
+        self.assertIn("successful_setup_quality", passed_rules)
         self.assertIn("breakout_volume", passed_rules)
         self.assertIsNotNone(result.return_3mo_pct)
         self.assertIsNotNone(result.avg_volume_50d)
