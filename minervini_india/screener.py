@@ -70,10 +70,11 @@ class ScreenConfig:
     min_avg_traded_value_50d: float = 10_000_000
     min_price: float = 60.0
     nearest_high_lookback_days: int = 20
-    min_nearest_high_distance_pct: float = 0.06
+    min_nearest_high_distance_pct: float = 0.07
     max_nearest_high_distance_pct: float = 0.10
     max_above_50ema_pct: float = 0.30
     min_success_vcp_score: float = 21.0
+    min_passing_score: float = 75.0
     max_stop_loss_pct: float = 0.08
 
 
@@ -380,8 +381,14 @@ def score_stock(
         vcp_score=vcp_score,
         config=active_config,
     )
+    score_rule = _minimum_score_rule(
+        score=normalized_score,
+        config=active_config,
+    )
     required_filters_passed = (
-        _required_filters_passed(trend_rules) and quality_rule.passed
+        _required_filters_passed(trend_rules)
+        and quality_rule.passed
+        and score_rule.passed
     )
     if not required_filters_passed:
         normalized_score = 0.0
@@ -423,7 +430,7 @@ def score_stock(
         inside_candle_trigger=inside_trigger,
         inside_candle_stop=inside_stop,
         sector=sector,
-        rules=tuple([*trend_rules, *vcp_rules, quality_rule, *rs_rules]),
+        rules=tuple([*trend_rules, *vcp_rules, quality_rule, score_rule, *rs_rules]),
         notes=tuple(notes),
     )
 
@@ -791,6 +798,15 @@ def _successful_setup_quality_rule(
                 f"{config.min_success_vcp_score:.1f}"
             )
         ),
+    )
+
+
+def _minimum_score_rule(score: float, config: ScreenConfig) -> RuleEvaluation:
+    passed = score >= config.min_passing_score
+    return RuleEvaluation(
+        "minimum_screen_score",
+        passed,
+        f"score {score:.1f} vs required >= {config.min_passing_score:.1f}",
     )
 
 

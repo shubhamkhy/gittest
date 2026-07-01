@@ -45,6 +45,7 @@ class ScreenerTests(unittest.TestCase):
         self.assertIn("not_overextended_from_50ema", passed_rules)
         self.assertIn("bullish_daily_candle", passed_rules)
         self.assertIn("successful_setup_quality", passed_rules)
+        self.assertIn("minimum_screen_score", passed_rules)
         self.assertIsNotNone(result.return_3mo_pct)
         self.assertIsNotNone(result.avg_volume_50d)
         self.assertIsNotNone(result.avg_traded_value_50d)
@@ -457,7 +458,7 @@ def _make_history(
         if index == 299:
             nearest_high = max(bar.high for bar in bars[-20:])
             previous = bars[-1]
-            close = nearest_high * 0.94
+            close = nearest_high * 0.929
             high = previous.high - 0.50
             low = previous.low + 0.50
             if close >= high:
