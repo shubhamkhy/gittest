@@ -183,3 +183,35 @@ matter.
 ```bash
 python3 -m unittest discover -s tests
 ```
+
+## Windows setup (one-click)
+
+1. Install **Python 3.10+** from [python.org](https://www.python.org/downloads/) and check
+   **Add Python to PATH** during install.
+2. Double-click **`setup_windows.bat`** to create a virtual environment and install
+   dependencies.
+3. Double-click **`run_screener.bat`** to scan the **full NSE list**
+   (`examples/nse_all_symbols.txt`, 2300+ symbols).
+
+Results are printed on screen and saved under `results/picks_YYYYMMDD_HHMMSS.txt`.
+
+### Windows manual commands
+
+```bat
+cd C:\path\to\gittest
+setup_windows.bat
+run_screener.bat
+```
+
+Or from PowerShell after setup:
+
+```powershell
+.venv\Scripts\Activate.ps1
+python scripts\scan_nse_full.py --symbols-file examples\nse_all_symbols.txt --output table
+```
+
+### Full NSE scan script
+
+The batch runner uses `scripts/scan_nse_full.py`, which downloads Yahoo Finance
+data in chunks for faster full-market scans. Benchmark scoring is disabled by
+default in this script to reduce rate-limit issues.
