@@ -8,6 +8,7 @@ using Mark Minervini-inspired concepts:
 - required 40% or better return over roughly the last three months
 - required current price within 10% of the nearest recent high
 - required current price at least 7% away from the nearest recent high
+  (inside candles may qualify from 6% away and require a screen score of at least 77)
 - required latest close above the latest open
 - price location versus 52-week high and low
 - liquidity filter using 50-day average volume
@@ -115,6 +116,7 @@ By default, CLI results only include stocks that pass the mandatory filters:
 - latest close above 60
 - latest close within 10% of the highest high from the prior 20 trading days
 - latest close at least 7% away from the highest high from the prior 20 trading days
+  (inside candles may qualify from 6% away and require a screen score of at least 77)
 - latest close above the latest open
 - latest close no more than 30% above the 50-day EMA
 - 50-day average traded value above 10,000,000
@@ -131,6 +133,7 @@ The normalized score is built from three components:
    - close above 60
    - close within 10% of the highest high from the prior 20 trading days
    - close at least 7% away from the highest high from the prior 20 trading days
+     (inside candles may qualify from 6% away and require a screen score of at least 77)
    - latest close above the latest open
    - close no more than 30% above the 50-day EMA
    - 50SMA > 150SMA > 200SMA

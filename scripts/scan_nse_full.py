@@ -152,8 +152,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"\n{len(passing)} symbols passed mandatory filters "
-        "(50/200 EMA, 40% 3m return, liquidity, price > 60, 7-10% from high, "
-        "score >= 75, inside candle or VCP >= 21).",
+        "(50/200 EMA, 40% 3m return, liquidity, price > 60, 7-10% from high "
+        "(inside 6-10% with score >= 77, otherwise 7-10%), score >= 75, "
+        "inside candle or VCP >= 21).",
         flush=True,
     )
     print("All passing results:\n", flush=True)

@@ -10,11 +10,13 @@ import unittest
 
 from minervini_india import (
     DailyBar,
+    ScreenConfig,
     load_csv_history,
     load_yahoo_history,
     screen_universe,
     score_stock,
 )
+from minervini_india.screener import _min_distance_from_nearest_high_passed
 
 
 class ScreenerTests(unittest.TestCase):
@@ -189,6 +191,51 @@ class ScreenerTests(unittest.TestCase):
         )
 
         self.assertFalse(equal_boundary_result.inside_candle_formed)
+
+    def test_inside_candle_distance_relax_requires_score_at_least_77(self) -> None:
+        config = ScreenConfig()
+        distance = 0.065
+
+        self.assertTrue(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=distance,
+                inside_candle_formed=True,
+                score=77.0,
+                config=config,
+            )
+        )
+        self.assertFalse(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=distance,
+                inside_candle_formed=True,
+                score=76.9,
+                config=config,
+            )
+        )
+        self.assertTrue(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=0.08,
+                inside_candle_formed=True,
+                score=77.0,
+                config=config,
+            )
+        )
+        self.assertFalse(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=0.08,
+                inside_candle_formed=True,
+                score=76.9,
+                config=config,
+            )
+        )
+        self.assertFalse(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=distance,
+                inside_candle_formed=False,
+                score=80.0,
+                config=config,
+            )
+        )
 
     def test_csv_loader_accepts_common_ohlcv_header_variants(self) -> None:
         with TemporaryDirectory() as temp_dir:

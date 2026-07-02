@@ -71,6 +71,8 @@ class ScreenConfig:
     min_price: float = 60.0
     nearest_high_lookback_days: int = 20
     min_nearest_high_distance_pct: float = 0.07
+    min_inside_candle_nearest_high_distance_pct: float = 0.06
+    min_score_for_inside_distance_relax: float = 77.0
     max_nearest_high_distance_pct: float = 0.10
     max_above_50ema_pct: float = 0.30
     min_success_vcp_score: float = 21.0
@@ -385,6 +387,13 @@ def score_stock(
         score=normalized_score,
         config=active_config,
     )
+    trend_rules = _with_min_distance_rule(
+        trend_rules=trend_rules,
+        distance_pct=trend_metrics.nearest_high_distance_pct / 100.0,
+        inside_candle_formed=inside_candle_formed,
+        score=normalized_score,
+        config=active_config,
+    )
     required_filters_passed = (
         _required_filters_passed(trend_rules)
         and quality_rule.passed
@@ -549,11 +558,12 @@ def _score_trend_template(
         ),
         RuleEvaluation(
             "min_distance_from_nearest_high",
-            abs(nearest_high_distance_pct) >= config.min_nearest_high_distance_pct,
+            abs(nearest_high_distance_pct)
+            >= config.min_inside_candle_nearest_high_distance_pct,
             (
                 f"close {close:.2f}, nearest {config.nearest_high_lookback_days}d "
                 f"prior high {nearest_high:.2f}, distance {nearest_high_distance_pct:.2%} "
-                f"vs required >= {config.min_nearest_high_distance_pct:.2%}"
+                f"vs required >= {config.min_inside_candle_nearest_high_distance_pct:.2%}"
             ),
         ),
         RuleEvaluation(
@@ -758,6 +768,68 @@ def _label_for_score(score: float, breakout: bool) -> str:
 def _required_filters_passed(rules: Sequence[RuleEvaluation]) -> bool:
     passed_rule_names = {rule.name for rule in rules if rule.passed}
     return REQUIRED_FILTER_RULES.issubset(passed_rule_names)
+
+
+def _min_distance_from_nearest_high_passed(
+    distance_pct: float,
+    inside_candle_formed: bool,
+    score: float,
+    config: ScreenConfig,
+) -> bool:
+    distance = abs(distance_pct)
+    if distance > config.max_nearest_high_distance_pct:
+        return False
+    if inside_candle_formed:
+        if distance < config.min_inside_candle_nearest_high_distance_pct:
+            return False
+        return score >= config.min_score_for_inside_distance_relax
+    return distance >= config.min_nearest_high_distance_pct
+
+
+def _min_distance_rule_detail(
+    distance_pct: float,
+    inside_candle_formed: bool,
+    score: float,
+    config: ScreenConfig,
+) -> str:
+    distance = abs(distance_pct)
+    if inside_candle_formed:
+        return (
+            f"inside-candle distance {distance:.2%}, "
+            f"score {score:.1f} vs required >= "
+            f"{config.min_score_for_inside_distance_relax:.1f}"
+        )
+    return (
+        f"distance {distance:.2%} vs required >= "
+        f"{config.min_nearest_high_distance_pct:.2%}"
+    )
+
+
+def _with_min_distance_rule(
+    trend_rules: list[RuleEvaluation],
+    distance_pct: float,
+    inside_candle_formed: bool,
+    score: float,
+    config: ScreenConfig,
+) -> list[RuleEvaluation]:
+    passed = _min_distance_from_nearest_high_passed(
+        distance_pct=distance_pct,
+        inside_candle_formed=inside_candle_formed,
+        score=score,
+        config=config,
+    )
+    detail = _min_distance_rule_detail(
+        distance_pct=distance_pct,
+        inside_candle_formed=inside_candle_formed,
+        score=score,
+        config=config,
+    )
+    return [
+        RuleEvaluation("min_distance_from_nearest_high", passed, detail)
+        if rule.name == "min_distance_from_nearest_high"
+        else rule
+        for rule in trend_rules
+    ]
 
 
 def _inside_candle_formed(bars: Sequence[DailyBar]) -> bool:
