@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import csv
-from datetime import date, timedelta
+import sys
+import types
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from minervini_india import DailyBar, load_csv_history, screen_universe, score_stock
+from minervini_india import (
+    DailyBar,
+    ScreenConfig,
+    load_csv_history,
+    load_yahoo_history,
+    screen_universe,
+    score_stock,
+)
+from minervini_india.screener import _min_distance_from_nearest_high_passed
 
 
 class ScreenerTests(unittest.TestCase):
@@ -16,15 +26,216 @@ class ScreenerTests(unittest.TestCase):
 
         result = score_stock("EXAMPLE.NS", stock_bars, benchmark=benchmark_bars)
 
-        self.assertEqual(result.label, "breakout_candidate")
-        self.assertGreaterEqual(result.score, 85.0)
+        self.assertEqual(result.label, "watchlist")
+        self.assertGreaterEqual(result.score, 75.0)
         self.assertIsNotNone(result.relative_strength_pct)
         self.assertGreater(result.relative_strength_pct or 0.0, 0.0)
         self.assertIsNotNone(result.pivot)
         self.assertIsNotNone(result.suggested_stop)
+        self.assertTrue(result.required_filters_passed)
+        self.assertTrue(result.inside_candle_formed)
         passed_rules = {rule.name for rule in result.rules if rule.passed}
+        self.assertIn("price_above_minimum", passed_rules)
+        self.assertIn("price_above_50ema", passed_rules)
+        self.assertIn("price_above_200ema", passed_rules)
         self.assertIn("price_above_200sma", passed_rules)
-        self.assertIn("breakout_volume", passed_rules)
+        self.assertIn("at_least_40pct_return_3mo", passed_rules)
+        self.assertIn("liquid_volume", passed_rules)
+        self.assertIn("liquid_traded_value", passed_rules)
+        self.assertIn("within_10pct_of_nearest_high", passed_rules)
+        self.assertIn("min_distance_from_nearest_high", passed_rules)
+        self.assertIn("not_overextended_from_50ema", passed_rules)
+        self.assertIn("bullish_daily_candle", passed_rules)
+        self.assertIn("successful_setup_quality", passed_rules)
+        self.assertIn("minimum_screen_score", passed_rules)
+        self.assertIsNotNone(result.return_3mo_pct)
+        self.assertIsNotNone(result.avg_volume_50d)
+        self.assertIsNotNone(result.avg_traded_value_50d)
+        self.assertIsNotNone(result.nearest_high_distance_pct)
+        self.assertIsNotNone(result.pct_above_50ema)
+
+    def test_requires_ema_position_return_and_average_volume(self) -> None:
+        low_return_result = score_stock(
+            "LOWRETURN.NS",
+            _make_low_return_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(low_return_result.required_filters_passed)
+        self.assertEqual(low_return_result.score, 0.0)
+        self.assertEqual(low_return_result.label, "avoid_for_now")
+        failed_low_return_rules = {
+            rule.name for rule in low_return_result.rules if not rule.passed
+        }
+        self.assertIn("at_least_40pct_return_3mo", failed_low_return_rules)
+
+        below_ema_result = score_stock(
+            "BELOWEMA.NS",
+            _make_below_ema_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(below_ema_result.required_filters_passed)
+        self.assertEqual(below_ema_result.score, 0.0)
+        failed_ema_rules = {
+            rule.name for rule in below_ema_result.rules if not rule.passed
+        }
+        self.assertIn("price_above_50ema", failed_ema_rules)
+        self.assertIn("price_above_200ema", failed_ema_rules)
+
+        low_volume_result = score_stock(
+            "LOWVOLUME.NS",
+            _make_low_volume_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(low_volume_result.required_filters_passed)
+        self.assertEqual(low_volume_result.score, 0.0)
+        failed_volume_rules = {
+            rule.name for rule in low_volume_result.rules if not rule.passed
+        }
+        self.assertIn("liquid_volume", failed_volume_rules)
+
+        low_traded_value_result = score_stock(
+            "LOWVALUE.NS",
+            _make_low_traded_value_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(low_traded_value_result.required_filters_passed)
+        self.assertEqual(low_traded_value_result.score, 0.0)
+        failed_value_rules = {
+            rule.name for rule in low_traded_value_result.rules if not rule.passed
+        }
+        self.assertIn("liquid_traded_value", failed_value_rules)
+
+        low_price_result = score_stock(
+            "LOWPRICE.NS",
+            _make_low_price_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(low_price_result.required_filters_passed)
+        self.assertEqual(low_price_result.score, 0.0)
+        failed_price_rules = {
+            rule.name for rule in low_price_result.rules if not rule.passed
+        }
+        self.assertIn("price_above_minimum", failed_price_rules)
+
+        far_from_high_result = score_stock(
+            "FARHIGH.NS",
+            _make_far_from_nearest_high_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(far_from_high_result.required_filters_passed)
+        self.assertEqual(far_from_high_result.score, 0.0)
+        failed_high_rules = {
+            rule.name for rule in far_from_high_result.rules if not rule.passed
+        }
+        self.assertIn("within_10pct_of_nearest_high", failed_high_rules)
+
+        too_close_high_result = score_stock(
+            "CLOSEHIGH.NS",
+            _make_too_close_to_nearest_high_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(too_close_high_result.required_filters_passed)
+        self.assertEqual(too_close_high_result.score, 0.0)
+        failed_close_high_rules = {
+            rule.name for rule in too_close_high_result.rules if not rule.passed
+        }
+        self.assertIn("min_distance_from_nearest_high", failed_close_high_rules)
+
+        overextended_result = score_stock(
+            "EXTENDED.NS",
+            _make_overextended_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(overextended_result.required_filters_passed)
+        self.assertEqual(overextended_result.score, 0.0)
+        failed_extension_rules = {
+            rule.name for rule in overextended_result.rules if not rule.passed
+        }
+        self.assertIn("not_overextended_from_50ema", failed_extension_rules)
+
+        red_candle_result = score_stock(
+            "REDCANDLE.NS",
+            _make_red_candle_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(red_candle_result.required_filters_passed)
+        self.assertEqual(red_candle_result.score, 0.0)
+        failed_candle_rules = {
+            rule.name for rule in red_candle_result.rules if not rule.passed
+        }
+        self.assertIn("bullish_daily_candle", failed_candle_rules)
+
+    def test_marks_inside_candle_when_latest_range_is_inside_previous_day(self) -> None:
+        result = score_stock(
+            "INSIDE.NS",
+            _make_inside_candle_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertTrue(result.inside_candle_formed)
+        self.assertTrue(result.to_dict()["inside_candle_formed"])
+
+        equal_boundary_result = score_stock(
+            "EQUAL.NS",
+            _make_equal_boundary_history(),
+            benchmark=_make_benchmark_history(),
+        )
+
+        self.assertFalse(equal_boundary_result.inside_candle_formed)
+
+    def test_inside_candle_distance_relax_requires_score_at_least_77(self) -> None:
+        config = ScreenConfig()
+        distance = 0.065
+
+        self.assertTrue(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=distance,
+                inside_candle_formed=True,
+                score=77.0,
+                config=config,
+            )
+        )
+        self.assertFalse(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=distance,
+                inside_candle_formed=True,
+                score=76.9,
+                config=config,
+            )
+        )
+        self.assertTrue(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=0.08,
+                inside_candle_formed=True,
+                score=77.0,
+                config=config,
+            )
+        )
+        self.assertFalse(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=0.08,
+                inside_candle_formed=True,
+                score=76.9,
+                config=config,
+            )
+        )
+        self.assertFalse(
+            _min_distance_from_nearest_high_passed(
+                distance_pct=distance,
+                inside_candle_formed=False,
+                score=80.0,
+                config=config,
+            )
+        )
 
     def test_csv_loader_accepts_common_ohlcv_header_variants(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -62,6 +273,24 @@ class ScreenerTests(unittest.TestCase):
             ],
         )
 
+    def test_yahoo_loader_skips_incomplete_live_rows(self) -> None:
+        sentinel = object()
+        previous_yfinance = sys.modules.get("yfinance", sentinel)
+        sys.modules["yfinance"] = types.SimpleNamespace(Ticker=_FakeTicker)
+        try:
+            bars = load_yahoo_history("TEST.NS")
+        finally:
+            if previous_yfinance is sentinel:
+                sys.modules.pop("yfinance", None)
+            else:
+                sys.modules["yfinance"] = previous_yfinance
+
+        self.assertEqual(
+            [bar.date for bar in bars],
+            [date(2026, 1, 1), date(2026, 1, 3)],
+        )
+        self.assertEqual([bar.close for bar in bars], [104.0, 108.0])
+
     def test_screen_universe_ranks_highest_score_first(self) -> None:
         strong = _make_stock_history()
         weak = _make_benchmark_history(start_price=100.0, daily_step=0.02)
@@ -69,31 +298,221 @@ class ScreenerTests(unittest.TestCase):
         results = screen_universe(
             {"STRONG.NS": strong, "WEAK.NS": weak},
             benchmark=_make_benchmark_history(),
+            sector_map={"STRONG.NS": "Auto", "WEAK.NS": "IT"},
         )
 
         self.assertEqual(
             [result.symbol for result in results][:2],
             ["STRONG.NS", "WEAK.NS"],
         )
+        self.assertEqual(results[0].sector, "Auto")
+        self.assertEqual(results[0].sector_match_count, 1)
 
 
 def _make_stock_history() -> list[DailyBar]:
+    return _make_history(pre_breakout_step=0.20, post_breakout_step=1.20)
+
+
+def _make_low_return_history() -> list[DailyBar]:
+    return _make_history(pre_breakout_step=0.45, post_breakout_step=0.45)
+
+
+def _make_low_volume_history() -> list[DailyBar]:
+    return _make_history(
+        pre_breakout_step=0.20,
+        post_breakout_step=1.00,
+        liquid=False,
+    )
+
+
+def _make_low_traded_value_history() -> list[DailyBar]:
+    return _with_constant_volume(
+        _scale_prices(_make_stock_history(), multiplier=0.30),
+        volume=120_000,
+    )
+
+
+def _make_low_price_history() -> list[DailyBar]:
+    return _scale_prices(_make_stock_history(), multiplier=0.20)
+
+
+def _make_inside_candle_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    previous = bars[-2]
+    inside_high = previous.high - 0.10
+    inside_low = previous.low + 0.10
+    inside_close = (inside_high + inside_low) / 2
+    latest = bars[-1]
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=inside_close,
+            high=inside_high,
+            low=inside_low,
+            close=inside_close,
+            volume=latest.volume,
+        ),
+    ]
+
+
+def _make_equal_boundary_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    previous = bars[-2]
+    latest = bars[-1]
+    equal_close = (previous.high + previous.low) / 2
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=equal_close,
+            high=previous.high,
+            low=previous.low,
+            close=equal_close,
+            volume=latest.volume,
+        ),
+    ]
+
+
+def _make_far_from_nearest_high_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    previous = bars[-2]
+    latest = bars[-1]
+    return [
+        *bars[:-2],
+        DailyBar(
+            date=previous.date,
+            open=previous.open,
+            high=latest.close * 1.25,
+            low=previous.low,
+            close=previous.close,
+            volume=previous.volume,
+        ),
+        latest,
+    ]
+
+
+def _make_too_close_to_nearest_high_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    latest = bars[-1]
+    nearest_high = max(bar.high for bar in bars[-21:-1])
+    close = nearest_high * 0.99
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=close * 0.998,
+            high=close * 1.005,
+            low=close * 0.995,
+            close=close,
+            volume=latest.volume,
+        ),
+    ]
+
+
+def _make_overextended_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    previous = bars[-2]
+    latest = bars[-1]
+    extended_close = latest.close * 1.60
+    return [
+        *bars[:-2],
+        DailyBar(
+            date=previous.date,
+            open=previous.open,
+            high=extended_close * 1.02,
+            low=previous.low,
+            close=previous.close,
+            volume=previous.volume,
+        ),
+        DailyBar(
+            date=latest.date,
+            open=extended_close * 0.995,
+            high=extended_close * 1.01,
+            low=extended_close * 0.99,
+            close=extended_close,
+            volume=latest.volume,
+        ),
+    ]
+
+
+def _make_red_candle_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    latest = bars[-1]
+    red_open = latest.close * 1.01
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=red_open,
+            high=red_open * 1.001,
+            low=latest.close * 0.995,
+            close=latest.close,
+            volume=latest.volume,
+        ),
+    ]
+
+
+def _with_constant_volume(bars: list[DailyBar], volume: float) -> list[DailyBar]:
+    return [
+        DailyBar(
+            date=bar.date,
+            open=bar.open,
+            high=bar.high,
+            low=bar.low,
+            close=bar.close,
+            volume=volume,
+        )
+        for bar in bars
+    ]
+
+
+def _make_below_ema_history() -> list[DailyBar]:
+    bars = _make_stock_history()
+    latest = bars[-1]
+    return [
+        *bars[:-1],
+        DailyBar(
+            date=latest.date,
+            open=90.0,
+            high=92.0,
+            low=88.0,
+            close=90.0,
+            volume=latest.volume,
+        ),
+    ]
+
+
+def _make_history(
+    pre_breakout_step: float,
+    post_breakout_step: float,
+    liquid: bool = True,
+) -> list[DailyBar]:
     bars: list[DailyBar] = []
     start = date(2025, 1, 1)
     close = 100.0
     for index in range(300):
-        close += 0.45
+        close += post_breakout_step if index >= 236 else pre_breakout_step
         spread_pct = _spread_for_index(index)
         high = close * (1 + spread_pct / 2)
         low = close * (1 - spread_pct / 2)
-        volume = 450_000
+        volume = 700_000 if liquid else 80_000
         if index >= 270:
-            volume = 220_000
+            volume = 550_000 if liquid else 60_000
+        if index == 298:
+            high = close * 1.12
+            low = close * 0.88
         if index == 299:
-            high = close * 1.015
-            close = max(high, max(bar.high for bar in bars[-20:]) + 1.0)
-            low = close * 0.995
-            volume = 850_000
+            nearest_high = max(bar.high for bar in bars[-20:])
+            previous = bars[-1]
+            close = nearest_high * 0.929
+            high = previous.high - 0.50
+            low = previous.low + 0.50
+            if close >= high:
+                close = (high + low) / 2
+            if close <= low:
+                close = (high + low) / 2
+            volume = 1_200_000 if liquid else 90_000
         bars.append(
             DailyBar(
                 date=start + timedelta(days=index),
@@ -105,6 +524,20 @@ def _make_stock_history() -> list[DailyBar]:
             )
         )
     return bars
+
+
+def _scale_prices(bars: list[DailyBar], multiplier: float) -> list[DailyBar]:
+    return [
+        DailyBar(
+            date=bar.date,
+            open=bar.open * multiplier,
+            high=bar.high * multiplier,
+            low=bar.low * multiplier,
+            close=bar.close * multiplier,
+            volume=bar.volume,
+        )
+        for bar in bars
+    ]
 
 
 def _make_benchmark_history(
@@ -139,6 +572,56 @@ def _spread_for_index(index: int) -> float:
     if index < 280:
         return 0.05
     return 0.025
+
+
+class _FakeTicker:
+    def __init__(self, symbol: str) -> None:
+        self.symbol = symbol
+
+    def history(self, period: str, auto_adjust: bool) -> "_FakeYahooFrame":
+        return _FakeYahooFrame(
+            [
+                (
+                    datetime(2026, 1, 1),
+                    {
+                        "Open": 100,
+                        "High": 105,
+                        "Low": 99,
+                        "Close": 104,
+                        "Volume": 600_000,
+                    },
+                ),
+                (
+                    datetime(2026, 1, 2),
+                    {
+                        "Open": 104,
+                        "High": 106,
+                        "Low": 103,
+                        "Close": float("nan"),
+                        "Volume": 650_000,
+                    },
+                ),
+                (
+                    datetime(2026, 1, 3),
+                    {
+                        "Open": 105,
+                        "High": 109,
+                        "Low": 104,
+                        "Close": 108,
+                        "Volume": 700_000,
+                    },
+                ),
+            ]
+        )
+
+
+class _FakeYahooFrame:
+    def __init__(self, rows: list[tuple[datetime, dict[str, float]]]) -> None:
+        self._rows = rows
+        self.empty = not rows
+
+    def iterrows(self):
+        return iter(self._rows)
 
 
 if __name__ == "__main__":

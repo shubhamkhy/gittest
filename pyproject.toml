@@ -16,3 +16,7 @@ live = ["yfinance"]
 
 [project.scripts]
 indian-minervini = "minervini_india.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["minervini_india*"]
+exclude = ["tests*", "examples*", "results*", "scripts*"]

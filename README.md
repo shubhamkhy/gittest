@@ -4,10 +4,20 @@ A small Python screening system for Indian equities. It ranks NSE/BSE symbols
 using Mark Minervini-inspired concepts:
 
 - trend-template checks using 50/150/200-day moving averages
+- required price confirmation above the 50-day and 200-day EMAs
+- required 40% or better return over roughly the last three months
+- required current price within 10% of the nearest recent high
+- required current price at least 7% away from the nearest recent high
+  (inside candles may qualify from 6% away and require a screen score of at least 77)
+- required latest close above the latest open
 - price location versus 52-week high and low
 - liquidity filter using 50-day average volume
+- traded-value liquidity quality using 50-day average close x volume
 - volatility contraction pattern (VCP) style setup checks
 - breakout volume confirmation
+- inside-candle marker when the latest high/low sits within the prior day's range
+- successful-setup quality gate requiring an inside candle or strong VCP score
+- optional sector grouping from a user-supplied symbol/sector CSV
 - optional relative strength versus a benchmark such as NIFTY 50 (`^NSEI`)
 - suggested stop level based on a predefined maximum risk percentage
 
@@ -51,6 +61,22 @@ indian-minervini \
   --min-score 60
 ```
 
+To show sector/group strength, pass an optional CSV with `symbol` and `sector`
+columns:
+
+```csv
+symbol,sector
+RATEGAIN.NS,Technology
+WHEELS.NS,Auto Components
+```
+
+```bash
+indian-minervini \
+  --symbols-file examples/nse_symbols.txt \
+  --live \
+  --sector-file sectors.csv
+```
+
 ## Run with local CSV data
 
 Create one CSV per symbol, named exactly like the symbol:
@@ -81,23 +107,51 @@ indian-minervini \
 
 Supported outputs are `table`, `json`, and `csv`.
 
+By default, CLI results only include stocks that pass the mandatory filters:
+
+- latest close above the 50-day EMA
+- latest close above the 200-day EMA
+- at least 40% return over the last 63 trading days, roughly three months
+- 50-day average daily volume above 100,000 shares
+- latest close above 60
+- latest close within 10% of the highest high from the prior 20 trading days
+- latest close at least 7% away from the highest high from the prior 20 trading days
+  (inside candles may qualify from 6% away and require a screen score of at least 77)
+- latest close above the latest open
+- latest close no more than 30% above the 50-day EMA
+- 50-day average traded value above 10,000,000
+- either a strict inside candle or VCP/setup score of at least 21
+- normalized screen score of at least 75
+
 ## How the score works
 
 The normalized score is built from three components:
 
 1. **Trend template, 50 points**
    - close above 50/150/200-day moving averages
+   - close above the 50-day and 200-day EMAs
+   - close above 60
+   - close within 10% of the highest high from the prior 20 trading days
+   - close at least 7% away from the highest high from the prior 20 trading days
+     (inside candles may qualify from 6% away and require a screen score of at least 77)
+   - latest close above the latest open
+   - close no more than 30% above the 50-day EMA
    - 50SMA > 150SMA > 200SMA
    - 200SMA rising versus 20 trading days ago
    - close within 25% of 52-week high
    - close at least 30% above 52-week low
-   - 50-day average volume above the liquidity threshold
+   - return over the last 63 trading days is at least 40%
+   - 50-day average daily volume above 100,000 shares
+   - 50-day average traded value above 10,000,000
 2. **VCP/setup, 30 points**
    - recent price range contraction
    - volume dry-up
    - tight recent closes
    - close near the pivot
    - breakout above pivot on strong volume
+   - mandatory quality gate passes when this VCP score is at least 21, or when
+     a strict inside candle has formed
+   - normalized score must be at least 75 after all other mandatory filters pass
 3. **Relative strength, 20 points**
    - stock return versus benchmark return over roughly six months
 
@@ -112,6 +166,17 @@ If no benchmark is supplied, relative strength is not scored and the remaining
 - `avoid_for_now`: does not currently meet enough rules
 - `insufficient_data`: fewer than 260 daily bars
 
+The table output prefixes the symbol with `*` when the latest completed candle
+is a strict inside candle: latest high is below the previous high, latest low is
+above the previous low, and both candles have valid high/low ranges. CSV and JSON
+outputs expose the same signal as `inside_candle_formed`.
+
+When an inside candle is marked, `inside_buy` is the breakout trigger above the
+inside candle high and `inside_sl` is the reference stop below the inside candle
+low. The table also includes reason columns such as 3-month return, 50/200 EMA,
+average volume, average traded value, distance to recent high, 50-EMA extension,
+and optional sector hit counts.
+
 The `suggested_stop` value is a simple 8% risk reference from the latest close.
 It is not a promise of execution or loss control; gap risk and liquidity still
 matter.
@@ -121,3 +186,35 @@ matter.
 ```bash
 python3 -m unittest discover -s tests
 ```
+
+## Windows setup (one-click)
+
+1. Install **Python 3.10+** from [python.org](https://www.python.org/downloads/) and check
+   **Add Python to PATH** during install.
+2. Double-click **`setup_windows.bat`** to create a virtual environment and install
+   dependencies.
+3. Double-click **`run_screener.bat`** to scan the **full NSE list**
+   (`examples/nse_all_symbols.txt`, 2300+ symbols).
+
+Results are printed on screen and saved under `results/picks_YYYYMMDD_HHMMSS.txt`.
+
+### Windows manual commands
+
+```bat
+cd C:\path\to\gittest
+setup_windows.bat
+run_screener.bat
+```
+
+Or from PowerShell after setup:
+
+```powershell
+.venv\Scripts\Activate.ps1
+python scripts\scan_nse_full.py --symbols-file examples\nse_all_symbols.txt --output table
+```
+
+### Full NSE scan script
+
+The batch runner uses `scripts/scan_nse_full.py`, which downloads Yahoo Finance
+data in chunks for faster full-market scans. Benchmark scoring is disabled by
+default in this script to reduce rate-limit issues.
